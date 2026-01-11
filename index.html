@@ -9,43 +9,59 @@
     
     <style>
         :root { --primary: #007AFF; --bg: #000000; --card: #1C1C1E; --accent: #32D74B; --danger: #FF3B30; }
+        
+        /* إصلاح اللاق: السماح بالسحب وجعل الارتفاع مرن */
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             background: var(--bg); color: white; margin: 0; padding: 0;
-            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+            display: flex; flex-direction: column; 
+            min-height: 100vh; 
+            overflow-y: auto; /* يسمح بالسحب العمودي */
+            -webkit-overflow-scrolling: touch; /* سحب ناعم على iOS */
         }
-        .header { padding: 15px; text-align: center; background: var(--card); border-bottom: 1px solid #333; }
-        .content { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+
+        .header { padding: 15px; text-align: center; background: var(--card); border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 100; }
+        
+        /* إزالة القيود التي تسبب تعليق الشاشة */
+        .content { 
+            padding: 15px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+            flex: none; /* إيقاف التمدد القسري */
+        }
         
         .video-container {
             position: relative; width: 100%; background: #000; border-radius: 15px; overflow: hidden;
             aspect-ratio: 16 / 9; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            will-change: transform; /* تحسين أداء المعالجة */
         }
         video { width: 100%; height: 100%; object-fit: contain; }
 
         .controls-card {
             background: var(--card); padding: 15px; border-radius: 15px;
             display: flex; flex-direction: column; gap: 12px;
+            margin-bottom: 20px; /* مساحة في الأسفل لسهولة السحب */
         }
+        
         #adminPanel { display: none; border: 1px solid var(--primary); }
 
         input { 
             background: #2C2C2E; border: 1px solid #3d3d3d; padding: 12px; border-radius: 10px; 
-            color: white; font-size: 16px; outline: none;
+            color: white; font-size: 16px; outline: none; -webkit-appearance: none;
         }
         button { 
             background: var(--primary); color: white; border: none; padding: 12px; 
-            border-radius: 10px; font-weight: 600; font-size: 15px;
+            border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer;
         }
         .status-bar { 
             font-size: 13px; color: var(--accent); text-align: center; 
             padding: 10px; background: rgba(50, 215, 75, 0.1); border-radius: 8px;
         }
-        /* تصميم عداد المشاهدين */
         .viewer-badge {
             display: inline-block; background: var(--danger); color: white;
-            padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;
-            margin-bottom: 8px; align-self: center;
+            padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;
+            align-self: center; margin-bottom: 5px;
         }
     </style>
 </head>
@@ -92,7 +108,7 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database().ref('live_sync');
-    const viewersRef = firebase.database().ref('viewers_presence'); // مرجع المشاهدين
+    const viewersRef = firebase.database().ref('viewers_presence');
     
     const player = document.getElementById('livePlayer');
     const statusDiv = document.getElementById('syncStatus');
@@ -101,15 +117,13 @@
     let isRemoteUpdate = false;
     let isAdmin = false;
 
-    // --- نظام عداد المشاهدين النشط ---
+    // عداد المشاهدين
     const myPresenceRef = viewersRef.push(true);
-    myPresenceRef.onDisconnect().remove(); // حذف البصمة عند الخروج
-
+    myPresenceRef.onDisconnect().remove();
     viewersRef.on('value', (snapshot) => {
-        viewerCountSpan.innerText = snapshot.numChildren();
+        viewerCountSpan.innerText = snapshot.numChildren() || 0;
     });
 
-    // --- نظام كلمة السر ---
     function checkPassword() {
         const pass = document.getElementById('passInput').value;
         if(pass === "1234") { 
@@ -137,6 +151,7 @@
 
         if (player.src !== data.url) {
             player.src = data.url;
+            player.load();
         }
 
         if (Math.abs(player.currentTime - data.time) > 3) {
