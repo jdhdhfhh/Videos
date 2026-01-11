@@ -3,98 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>بث مباشر - نظام اتصال</title>
+    <title>بث مباشر متزامن مع صوت</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
     <style>
-        :root { --primary: #007AFF; --bg: #000000; --card: #1C1C1E; --accent: #32D74B; --danger: #FF3B30; }
+        :root { --primary: #007AFF; --bg: #0b0b0c; --card: #1C1C1E; --accent: #32D74B; --danger: #FF3B30; }
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            font-family: -apple-system, system-ui, sans-serif; 
             background: var(--bg); color: white; margin: 0; padding: 0;
             display: flex; flex-direction: column; min-height: 100vh; overflow-y: auto;
         }
         .header { padding: 15px; text-align: center; background: var(--card); border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 100; }
         .content { padding: 15px; display: flex; flex-direction: column; gap: 15px; }
-        
-        /* حاوية الفيديو */
         .video-container {
             position: relative; width: 100%; background: #000; border-radius: 15px; overflow: hidden;
             aspect-ratio: 16 / 9; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
         video { width: 100%; height: 100%; object-fit: contain; }
-
-        /* نظام الاتصال الجديد */
-        .call-box {
-            background: linear-gradient(145deg, #1c1c1e, #2c2c2e);
-            padding: 15px; border-radius: 15px; border: 1px solid #444;
-            display: flex; flex-direction: column; gap: 10px; align-items: center;
-        }
-        .call-status { font-size: 14px; color: var(--accent); font-weight: bold; }
-        .call-btn {
-            width: 100%; padding: 12px; border-radius: 12px; border: none;
-            font-weight: bold; font-size: 16px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; gap: 10px;
-            transition: 0.3s; color: white;
-        }
-        .btn-join { background: var(--primary); }
-        .btn-leave { background: var(--danger); }
-
-        /* الشات */
-        .chat-container { background: var(--card); border-radius: 15px; display: flex; flex-direction: column; height: 250px; }
-        #chatMessages { flex: 1; overflow-y: auto; padding: 10px; font-size: 14px; display: flex; flex-direction: column; gap: 8px; }
-        .msg { background: #2C2C2E; padding: 8px 12px; border-radius: 12px; width: fit-content; max-width: 80%; }
-        .msg-admin { border-right: 3px solid var(--primary); background: #1a2a3a; }
-        .chat-input-area { display: flex; padding: 10px; gap: 8px; border-top: 1px solid #333; }
-        .chat-input-area input { flex: 1; background: #111; border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; }
-
-        /* التحكم */
         .controls-card { background: var(--card); padding: 15px; border-radius: 15px; display: flex; flex-direction: column; gap: 12px; }
-        #adminPanel { display: none; border: 1px solid var(--primary); }
-        input { background: #2C2C2E; border: 1px solid #3d3d3d; padding: 12px; border-radius: 10px; color: white; outline: none; }
-        button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
-        .viewer-badge { display: inline-block; background: var(--danger); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; align-self: center; }
+        .mic-section { border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }
+        input { background: #2C2C2E; border: 1px solid #3d3d3d; padding: 12px; border-radius: 10px; color: white; font-size: 16px; }
+        button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:active { opacity: 0.7; }
+        .status-bar { font-size: 13px; color: var(--accent); text-align: center; padding: 10px; background: rgba(50, 215, 75, 0.1); border-radius: 8px; }
+        .viewer-badge { background: var(--danger); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; align-self: center; }
     </style>
 </head>
 <body>
 
-<div class="header"><h3 style="margin:0;">بث مباشر متزامن 🎬</h3></div>
+<div class="header"><h3>بث مباشر متزامن 🎬</h3></div>
 
 <div class="content">
     <div class="viewer-badge">● مباشر: <span id="viewerCount">0</span></div>
 
     <div class="video-container">
-        <video id="livePlayer" controls playsinline webkit-playsinline></video>
+        <video id="livePlayer" controls playsinline></video>
     </div>
 
-    <div class="call-box">
-        <div class="call-status" id="callStatus">📞 المكالمة مغلقة</div>
-        <button id="callBtn" class="call-btn btn-join" onclick="handleCall()">📱 فتح خط (انضمام للمكالمة)</button>
-    </div>
-
-    <div class="chat-container">
-        <div id="chatMessages"></div>
-        <div class="chat-input-area">
-            <input type="text" id="chatInput" placeholder="اكتب رسالة...">
-            <button onclick="sendMessage()">إرسال</button>
+    <div class="controls-card mic-section">
+        <div>
+            <div style="font-weight: bold; font-size: 14px;">المحادثة الصوتية 🎙️</div>
+            <div id="micStatus" style="font-size: 11px; color: #aaa;">المايك مغلق</div>
         </div>
+        <button id="micBtn" onclick="toggleMic()" style="background: var(--danger);">فتح المايك</button>
     </div>
+
+    <div id="syncStatus" class="status-bar">جاري المزامنة...</div>
 
     <div class="controls-card" id="loginPanel">
-        <input type="password" id="passInput" placeholder="كلمة السر...">
-        <button onclick="checkPassword()">دخول كمسؤول</button>
+        <input type="password" id="passInput" placeholder="كلمة سر المسؤول...">
+        <button onclick="checkPassword()">دخول المسؤول</button>
     </div>
 
-    <div id="adminPanel" class="controls-card">
-        <div style="color:var(--accent); font-size:12px;">وضع المسؤول (8998) 🔒</div>
-        <input type="url" id="urlInput" placeholder="رابط الفيديو الجديد...">
-        <button onclick="updateGlobalVideo()">تحديث الفيديو</button>
+    <div class="controls-card" id="adminPanel" style="display:none;">
+        <input type="url" id="urlInput" placeholder="رابط الفيديو (MP4/M3U8)...">
+        <button onclick="updateGlobalVideo()">تحديث عند الجميع</button>
     </div>
 </div>
 
-<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
-
-<script>
-    // إعدادات Firebase
+<div id="remoteAudios"></div> <script>
+    // --- 1. إعدادات Firebase ---
     const firebaseConfig = {
         apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
         authDomain: "videos-5e336.firebaseapp.com",
@@ -104,114 +76,108 @@
         messagingSenderId: "300218651134",
         appId: "1:300218651134:web:4bd24df8e555e62828f0af"
     };
-
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database().ref('live_sync');
-    const chatRef = firebase.database().ref('chat');
     const viewersRef = firebase.database().ref('viewers_presence');
+
+    // --- 2. إعدادات الصوت (PeerJS) ---
+    const peer = new Peer(); 
+    let myStream;
+    let isMicOn = false;
+
+    peer.on('open', (id) => {
+        // تسجيل المستخدم في Firebase مع معرف الصوت الخاص به
+        const myPresence = viewersRef.push({ peerId: id });
+        myPresence.onDisconnect().remove();
+    });
+
+    // استقبال المكالمات الصوتية من الآخرين
+    peer.on('call', (call) => {
+        call.answer(null); 
+        call.on('stream', (remoteStream) => {
+            let audio = document.createElement('audio');
+            audio.srcObject = remoteStream;
+            audio.autoplay = true;
+            document.getElementById('remoteAudios').appendChild(audio);
+        });
+    });
+
+    async function toggleMic() {
+        const btn = document.getElementById('micBtn');
+        const status = document.getElementById('micStatus');
+        
+        if (!isMicOn) {
+            try {
+                myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                isMicOn = true;
+                btn.innerText = "إغلاق المايك";
+                btn.style.background = "var(--accent)";
+                status.innerText = "صوتك مسموع الآن ✅";
+
+                // الاتصال بجميع الموجودين لإرسال الصوت
+                viewersRef.once('value', (snapshot) => {
+                    snapshot.forEach((child) => {
+                        const data = child.val();
+                        if (data.peerId && data.peerId !== peer.id) {
+                            peer.call(data.peerId, myStream);
+                        }
+                    });
+                });
+            } catch (err) { alert("فشل الوصول للمايكروفون"); }
+        } else {
+            myStream.getTracks().forEach(track => track.stop());
+            isMicOn = false;
+            btn.innerText = "فتح المايك";
+            btn.style.background = "var(--danger)";
+            status.innerText = "المايك مغلق";
+        }
+    }
+
+    // --- 3. إعدادات الفيديو والمزامنة ---
     const player = document.getElementById('livePlayer');
-    
+    const statusDiv = document.getElementById('syncStatus');
     let isAdmin = false;
     let isRemoteUpdate = false;
-    let localStream;
-    let peer;
-    let isConnected = false;
 
-    // --- نظام الاتصال (PeerJS) ---
-    peer = new Peer(); 
-
-    function handleCall() {
-        if (!isConnected) {
-            startCall();
-        } else {
-            stopCall();
-        }
-    }
-
-    async function startCall() {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            isConnected = true;
-            document.getElementById('callBtn').innerText = "📴 إنهاء المكالمة";
-            document.getElementById('callBtn').className = "call-btn btn-leave";
-            document.getElementById('callStatus').innerText = "🎙️ أنت الآن في الخط..";
-            
-            // في هذا النظام، يتم استقبال المكالمات تلقائياً من أي شخص يدخل
-            peer.on('call', (call) => {
-                call.answer(localStream);
-                const audio = new Audio();
-                call.on('stream', (remoteStream) => {
-                    audio.srcObject = remoteStream;
-                    audio.play();
-                });
-            });
-        } catch (e) {
-            alert("يرجى تفعيل الميكروفون للاتصال");
-        }
-    }
-
-    function stopCall() {
-        if(localStream) localStream.getTracks().forEach(t => t.stop());
-        isConnected = false;
-        document.getElementById('callBtn').innerText = "📱 فتح خط (انضمام للمكالمة)";
-        document.getElementById('callBtn').className = "call-btn btn-join";
-        document.getElementById('callStatus').innerText = "📞 المكالمة مغلقة";
-    }
-
-    // --- وظائف التحكم والمزامنة (كلمة السر 8998) ---
     function checkPassword() {
-        if(document.getElementById('passInput').value === "8998") {
+        if(document.getElementById('passInput').value === "1234") {
             isAdmin = true;
             document.getElementById('loginPanel').style.display = 'none';
             document.getElementById('adminPanel').style.display = 'flex';
-        } else { alert("خطأ في كلمة السر!"); }
-    }
-
-    // منع التقديم للمشاهدين
-    player.onseeking = () => {
-        if (!isAdmin && !isRemoteUpdate) {
-            db.child('time').once('value', (s) => { player.currentTime = s.val(); });
-        }
-    };
-
-    function sendMessage() {
-        const text = document.getElementById('chatInput').value;
-        if(text) {
-            chatRef.push({ text, admin: isAdmin });
-            document.getElementById('chatInput').value = '';
         }
     }
-
-    chatRef.limitToLast(10).on('child_added', (s) => {
-        const m = s.val();
-        const div = document.createElement('div');
-        div.className = `msg ${m.admin ? 'msg-admin' : ''}`;
-        div.innerText = (m.admin ? "⭐ المسؤول: " : "👤: ") + m.text;
-        document.getElementById('chatMessages').appendChild(div);
-        document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-    });
-
-    // العداد والمزامنة
-    const myPresenceRef = viewersRef.push(true);
-    myPresenceRef.onDisconnect().remove();
-    viewersRef.on('value', s => { document.getElementById('viewerCount').innerText = s.numChildren(); });
-
-    db.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (!data || isAdmin) return; 
-        isRemoteUpdate = true;
-        if (player.src !== data.url) player.src = data.url;
-        if (Math.abs(player.currentTime - data.time) > 2) player.currentTime = data.time;
-        data.status === "play" ? player.play().catch(()=> {}) : player.pause();
-        setTimeout(() => isRemoteUpdate = false, 500);
-    });
 
     function updateGlobalVideo() {
         const url = document.getElementById('urlInput').value;
-        if(url && isAdmin) db.set({ url, status: "play", time: 0 });
+        if(url && isAdmin) db.set({ url: url, status: "play", time: 0, timestamp: Date.now() });
     }
 
-    setInterval(() => { if(isAdmin && !player.paused) db.update({ time: player.currentTime, status: "play" }); }, 3000);
+    db.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        isRemoteUpdate = true;
+
+        if (player.src !== data.url) {
+            if (Hls.isSupported() && data.url.includes('m3u8')) {
+                const hls = new Hls(); hls.loadSource(data.url); hls.attachMedia(player);
+            } else { player.src = data.url; }
+        }
+
+        if (Math.abs(player.currentTime - data.time) > 3) player.currentTime = data.time;
+        if (data.status === "play" && player.paused) {
+            player.play().catch(() => statusDiv.innerText = "إضغط Play للمزامنة 🔊");
+        } else if (data.status === "pause") { player.pause(); }
+
+        setTimeout(() => isRemoteUpdate = false, 1000);
+    });
+
+    // تحديث عدد المشاهدين
+    viewersRef.on('value', (s) => document.getElementById('viewerCount').innerText = s.numChildren() || 0);
+
+    // ارسال التحديثات من المسؤول فقط
+    player.onplay = () => { if(isAdmin && !isRemoteUpdate) db.update({status:"play", time: player.currentTime}); };
+    player.onpause = () => { if(isAdmin && !isRemoteUpdate) db.update({status:"pause", time: player.currentTime}); };
+    setInterval(() => { if(isAdmin && !player.paused && !isRemoteUpdate) db.update({time: player.currentTime}); }, 4000);
 </script>
 </body>
 </html>
