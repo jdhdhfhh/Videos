@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مشغل فيديو لايف - Firebase</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 40px; background: #1a1a1a; color: #fff; }
+        .box { background: #2d2d2d; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 700px; margin: auto; }
+        input { width: 70%; padding: 12px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff; outline: none; }
+        button { padding: 12px 25px; background: #008cff; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+        button:hover { background: #005fa3; }
+        video { width: 100%; margin-top: 25px; border-radius: 10px; background: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .status { margin-top: 10px; font-size: 0.9em; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <div class="box">
+        <h2>بث الفيديو المباشر (Realtime)</h2>
+        <p>ضع رابط الفيديو (MP4) ليتم تشغيله عند الجميع فوراً</p>
+        
+        <input type="text" id="urlInput" placeholder="أدخل رابط الفيديو هنا...">
+        <button onclick="sendUrl()">تحديث</button>
+        <div id="statusText" class="status">جاهز للاستقبال...</div>
+
+        <video id="remoteVideo" controls autoplay playsinline>
+            متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+
+    <script>
+        // الإعدادات الخاصة بك التي استخرجتها
+        const firebaseConfig = {
+            apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
+            authDomain: "videos-5e336.firebaseapp.com",
+            databaseURL: "https://videos-5e336-default-rtdb.firebaseio.com",
+            projectId: "videos-5e336",
+            storageBucket: "videos-5e336.firebasestorage.app",
+            messagingSenderId: "300218651134",
+            appId: "1:300218651134:web:4bd24df8e555e62828f0af"
+        };
+
+        // تشغيل Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // دالة إرسال الرابط لقاعدة البيانات
+        function sendUrl() {
+            const val = document.getElementById('urlInput').value;
+            const statusText = document.getElementById('statusText');
+            
+            if(val.trim() !== "") {
+                db.ref('current_video').set(val)
+                    .then(() => {
+                        statusText.innerText = "تم التحديث بنجاح!";
+                        statusText.style.color = "#4CAF50";
+                        setTimeout(() => { statusText.innerText = "جاهز..."; statusText.style.color = "#aaa"; }, 3000);
+                    })
+                    .catch((error) => {
+                        alert("خطأ: تأكد من ضبط الـ Rules في فيربايس");
+                    });
+            } else {
+                alert("يرجى إدخال رابط أولاً");
+            }
+        }
+
+        // الاستماع للتغييرات في الوقت الفعلي (هذا هو السحر!)
+        db.ref('current_video').on('value', (snapshot) => {
+            const videoUrl = snapshot.val();
+            if(videoUrl) {
+                const player = document.getElementById('remoteVideo');
+                player.src = videoUrl;
+                player.play().catch(e => console.log("التشغيل التلقائي بانتظار تفاعل المستخدم"));
+            }
+        });
+    </script>
+</body>
+</html>
