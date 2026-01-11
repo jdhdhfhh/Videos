@@ -2,39 +2,66 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بث مباشر متزامن - Firebase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>بث مباشر - iOS Optimized</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
     <style>
-        :root { --primary: #008cff; --bg: #121212; --card: #1e1e1e; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: var(--card); padding: 25px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); width: 90%; max-width: 800px; text-align: center; }
-        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
-        input { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #000; color: #fff; outline: none; }
-        button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        button:hover { opacity: 0.8; }
-        video { width: 100%; border-radius: 12px; background: #000; outline: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .badge { display: inline-block; padding: 5px 12px; background: #333; border-radius: 20px; font-size: 12px; margin-top: 15px; color: #aaa; }
+        :root { --primary: #007AFF; --bg: #000000; --card: #1C1C1E; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: var(--bg); color: white; margin: 0; padding: 0;
+            display: flex; flex-direction: column; height: 100vh;
+        }
+        .header { padding: 20px; text-align: center; background: var(--card); border-bottom: 1px solid #333; }
+        .content { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        
+        .input-box {
+            background: var(--card); padding: 15px; border-radius: 15px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        input { 
+            background: #2C2C2E; border: none; padding: 12px; border-radius: 10px; 
+            color: white; font-size: 16px; /* حجم 16 يمنع الزووم التلقائي في أيفون */
+        }
+        button { 
+            background: var(--primary); color: white; border: none; padding: 12px; 
+            border-radius: 10px; font-weight: 600; font-size: 16px; active: opacity: 0.7;
+        }
+
+        .video-container {
+            position: relative; width: 100%; background: #000; border-radius: 15px; overflow: hidden;
+            aspect-ratio: 16 / 9;
+        }
+        video { width: 100%; height: 100%; object-fit: contain; }
+
+        .status-bar { font-size: 12px; color: #8E8E93; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>التحكم الجماعي بالفيديو 🎬</h2>
-    <div class="input-group">
-        <input type="text" id="urlInput" placeholder="ضع رابط الفيديو المباشر هنا (mp4)...">
-        <button onclick="changeVideo()">تغيير للكل</button>
+<div class="header">
+    <h3 style="margin:0;">تحكم الفيديو المباشر 📺</h3>
+</div>
+
+<div class="content">
+    <div class="video-container">
+        <video id="livePlayer" controls playsinline webkit-playsinline preload="auto"></video>
     </div>
 
-    <video id="livePlayer" controls playsinline></video>
-    
-    <div class="badge" id="syncStatus">متصل ومزامن مع الجميع</div>
+    <div class="input-box">
+        <input type="url" id="urlInput" placeholder="الصق رابط mp4 هنا...">
+        <button onclick="changeVideo()">تحديث عند الجميع</button>
+    </div>
+
+    <div class="status-bar" id="syncStatus">جاري المزامنة مع السحابة...</div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
 
 <script>
-    // الإعدادات الخاصة بك
     const firebaseConfig = {
         apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
         authDomain: "videos-5e336.firebaseapp.com",
@@ -48,64 +75,38 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database().ref('live_sync');
     const player = document.getElementById('livePlayer');
-    let isUpdating = false; // لمنع "حلقة اللانهائية" بين التحديث والاستقبال
+    let isUpdating = false;
 
-    // 1. وظيفة تغيير الفيديو عند الكل
     function changeVideo() {
         const url = document.getElementById('urlInput').value;
         if(url) {
-            db.set({
-                url: url,
-                status: "play",
-                time: 0,
-                lastUpdated: Date.now()
-            });
+            db.set({ url: url, status: "play", time: 0, lastUpdated: Date.now() });
         }
     }
 
-    // 2. الاستماع للأوامر من Firebase
     db.on('value', (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
+        isUpdating = true;
 
-        isUpdating = true; // تفعيل وضع التحديث الخارجي
+        if (player.src !== data.url) player.src = data.url;
+        if (Math.abs(player.currentTime - data.time) > 2) player.currentTime = data.time;
 
-        // تحديث الرابط إذا اختلف
-        if (player.src !== data.url) {
-            player.src = data.url;
-        }
-
-        // تحديث الوقت إذا كان الفرق أكثر من ثانيتين (للمزامنة)
-        if (Math.abs(player.currentTime - data.time) > 2) {
-            player.currentTime = data.time;
-        }
-
-        // تحديث حالة التشغيل/الإيقاف
         if (data.status === "play" && player.paused) {
-            player.play().catch(() => console.log("تطلب تفاعل مستخدم"));
+            // ملاحظة: الأيفون قد يحتاج ضغطة يدوية أول مرة للسماح بالصوت
+            player.play().catch(() => { document.getElementById('syncStatus').innerText = "اضغط Play للمزامنة"; });
         } else if (data.status === "pause" && !player.paused) {
             player.pause();
         }
-
         setTimeout(() => { isUpdating = false; }, 500);
     });
 
-    // 3. إرسال الأوامر عند ضغطك أنت على أزرار المشغل
-    player.onplay = () => {
-        if (!isUpdating) db.child('status').set("play");
-    };
-
-    player.onpause = () => {
-        if (!isUpdating) db.child('status').set("pause");
-    };
-
-    // تحديث الوقت دورياً في القاعدة ليعرف الجدد أين وصل البث
+    player.onplay = () => { if (!isUpdating) db.child('status').set("play"); };
+    player.onpause = () => { if (!isUpdating) db.child('status').set("pause"); };
+    
     player.ontimeupdate = () => {
-        if (!isUpdating && !player.paused) {
-            // نحدث الوقت كل 3 ثواني لتخفيف الضغط على القاعدة
-            if (Math.floor(player.currentTime) % 3 === 0) {
-                db.child('time').set(player.currentTime);
-            }
+        if (!isUpdating && !player.paused && Math.floor(player.currentTime) % 3 === 0) {
+            db.child('time').set(player.currentTime);
         }
     };
 </script>
