@@ -2,80 +2,113 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>مشغل فيديو لايف - Firebase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بث مباشر متزامن - Firebase</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 40px; background: #1a1a1a; color: #fff; }
-        .box { background: #2d2d2d; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 700px; margin: auto; }
-        input { width: 70%; padding: 12px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff; outline: none; }
-        button { padding: 12px 25px; background: #008cff; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; transition: 0.3s; }
-        button:hover { background: #005fa3; }
-        video { width: 100%; margin-top: 25px; border-radius: 10px; background: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .status { margin-top: 10px; font-size: 0.9em; color: #aaa; }
+        :root { --primary: #008cff; --bg: #121212; --card: #1e1e1e; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: var(--card); padding: 25px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); width: 90%; max-width: 800px; text-align: center; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #000; color: #fff; outline: none; }
+        button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { opacity: 0.8; }
+        video { width: 100%; border-radius: 12px; background: #000; outline: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .badge { display: inline-block; padding: 5px 12px; background: #333; border-radius: 20px; font-size: 12px; margin-top: 15px; color: #aaa; }
     </style>
 </head>
 <body>
 
-    <div class="box">
-        <h2>بث الفيديو المباشر (Realtime)</h2>
-        <p>ضع رابط الفيديو (MP4) ليتم تشغيله عند الجميع فوراً</p>
-        
-        <input type="text" id="urlInput" placeholder="أدخل رابط الفيديو هنا...">
-        <button onclick="sendUrl()">تحديث</button>
-        <div id="statusText" class="status">جاهز للاستقبال...</div>
-
-        <video id="remoteVideo" controls autoplay playsinline>
-            متصفحك لا يدعم تشغيل الفيديو.
-        </video>
+<div class="container">
+    <h2>التحكم الجماعي بالفيديو 🎬</h2>
+    <div class="input-group">
+        <input type="text" id="urlInput" placeholder="ضع رابط الفيديو المباشر هنا (mp4)...">
+        <button onclick="changeVideo()">تغيير للكل</button>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+    <video id="livePlayer" controls playsinline></video>
+    
+    <div class="badge" id="syncStatus">متصل ومزامن مع الجميع</div>
+</div>
 
-    <script>
-        // الإعدادات الخاصة بك التي استخرجتها
-        const firebaseConfig = {
-            apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
-            authDomain: "videos-5e336.firebaseapp.com",
-            databaseURL: "https://videos-5e336-default-rtdb.firebaseio.com",
-            projectId: "videos-5e336",
-            storageBucket: "videos-5e336.firebasestorage.app",
-            messagingSenderId: "300218651134",
-            appId: "1:300218651134:web:4bd24df8e555e62828f0af"
-        };
+<script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
 
-        // تشغيل Firebase
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+<script>
+    // الإعدادات الخاصة بك
+    const firebaseConfig = {
+        apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
+        authDomain: "videos-5e336.firebaseapp.com",
+        databaseURL: "https://videos-5e336-default-rtdb.firebaseio.com",
+        projectId: "videos-5e336",
+        storageBucket: "videos-5e336.firebasestorage.app",
+        messagingSenderId: "300218651134",
+        appId: "1:300218651134:web:4bd24df8e555e62828f0af"
+    };
 
-        // دالة إرسال الرابط لقاعدة البيانات
-        function sendUrl() {
-            const val = document.getElementById('urlInput').value;
-            const statusText = document.getElementById('statusText');
-            
-            if(val.trim() !== "") {
-                db.ref('current_video').set(val)
-                    .then(() => {
-                        statusText.innerText = "تم التحديث بنجاح!";
-                        statusText.style.color = "#4CAF50";
-                        setTimeout(() => { statusText.innerText = "جاهز..."; statusText.style.color = "#aaa"; }, 3000);
-                    })
-                    .catch((error) => {
-                        alert("خطأ: تأكد من ضبط الـ Rules في فيربايس");
-                    });
-            } else {
-                alert("يرجى إدخال رابط أولاً");
-            }
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database().ref('live_sync');
+    const player = document.getElementById('livePlayer');
+    let isUpdating = false; // لمنع "حلقة اللانهائية" بين التحديث والاستقبال
+
+    // 1. وظيفة تغيير الفيديو عند الكل
+    function changeVideo() {
+        const url = document.getElementById('urlInput').value;
+        if(url) {
+            db.set({
+                url: url,
+                status: "play",
+                time: 0,
+                lastUpdated: Date.now()
+            });
+        }
+    }
+
+    // 2. الاستماع للأوامر من Firebase
+    db.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+
+        isUpdating = true; // تفعيل وضع التحديث الخارجي
+
+        // تحديث الرابط إذا اختلف
+        if (player.src !== data.url) {
+            player.src = data.url;
         }
 
-        // الاستماع للتغييرات في الوقت الفعلي (هذا هو السحر!)
-        db.ref('current_video').on('value', (snapshot) => {
-            const videoUrl = snapshot.val();
-            if(videoUrl) {
-                const player = document.getElementById('remoteVideo');
-                player.src = videoUrl;
-                player.play().catch(e => console.log("التشغيل التلقائي بانتظار تفاعل المستخدم"));
+        // تحديث الوقت إذا كان الفرق أكثر من ثانيتين (للمزامنة)
+        if (Math.abs(player.currentTime - data.time) > 2) {
+            player.currentTime = data.time;
+        }
+
+        // تحديث حالة التشغيل/الإيقاف
+        if (data.status === "play" && player.paused) {
+            player.play().catch(() => console.log("تطلب تفاعل مستخدم"));
+        } else if (data.status === "pause" && !player.paused) {
+            player.pause();
+        }
+
+        setTimeout(() => { isUpdating = false; }, 500);
+    });
+
+    // 3. إرسال الأوامر عند ضغطك أنت على أزرار المشغل
+    player.onplay = () => {
+        if (!isUpdating) db.child('status').set("play");
+    };
+
+    player.onpause = () => {
+        if (!isUpdating) db.child('status').set("pause");
+    };
+
+    // تحديث الوقت دورياً في القاعدة ليعرف الجدد أين وصل البث
+    player.ontimeupdate = () => {
+        if (!isUpdating && !player.paused) {
+            // نحدث الوقت كل 3 ثواني لتخفيف الضغط على القاعدة
+            if (Math.floor(player.currentTime) % 3 === 0) {
+                db.child('time').set(player.currentTime);
             }
-        });
-    </script>
+        }
+    };
+</script>
+
 </body>
 </html>
