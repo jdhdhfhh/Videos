@@ -3,127 +3,196 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>iOS Resumable Player</title>
+    <title>Smart Player - iOS Design</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
     <style>
-        :root { --ios-bg: #000; --ios-accent: #34C759; /* أخضر للنجاح */ }
-        body { font-family: -apple-system, sans-serif; background: var(--ios-bg); color: white; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        :root {
+            --ios-bg: #000000;
+            --ios-card: rgba(28, 28, 30, 0.85);
+            --ios-accent: #0A84FF; /* لون أبل الأزرق */
+            --ios-red: #FF3B30;   /* لون أبل الأحمر */
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background-color: var(--ios-bg); 
+            color: white; 
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
         .container { width: 100%; max-width: 500px; }
-        .glass-card { background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); margin-top: 20px; }
-        video { width: 100%; border-radius: 20px; background: #1c1c1e; }
-        .progress-container { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; margin: 15px 0; overflow: hidden; display: block; }
-        #pBar { width: 0%; height: 100%; background: #0A84FF; transition: width 0.3s; }
-        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; font-size: 16px; box-sizing: border-box; }
-        .btn-group { display: flex; gap: 10px; }
-        button { flex: 1; padding: 14px; border-radius: 12px; border: none; font-weight: 600; }
-        .btn-main { background: #0A84FF; color: white; }
-        .btn-del { background: rgba(255, 59, 48, 0.2); color: #FF3B30; }
-        #status { font-size: 13px; margin-bottom: 10px; color: #8e8e93; font-weight: bold; }
+
+        h2 { font-weight: 600; font-size: 24px; letter-spacing: -0.5px; margin-bottom: 25px; text-align: center; }
+
+        /* تصميم الكرت الزجاجي */
+        .glass-card {
+            background: var(--ios-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 20px;
+            border: 0.5px solid rgba(255,255,255,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        input { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 12px; 
+            border: none; 
+            background: rgba(255,255,255,0.1); 
+            color: white; 
+            font-size: 16px;
+            margin-bottom: 15px;
+            outline: none;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        button { 
+            flex: 2;
+            padding: 14px; 
+            border-radius: 12px; 
+            border: none; 
+            background-color: var(--ios-accent); 
+            color: white; 
+            font-size: 16px;
+            font-weight: 600; 
+            transition: transform 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button.delete-btn {
+            flex: 1;
+            background-color: rgba(255, 59, 48, 0.2);
+            color: var(--ios-red);
+        }
+
+        button:active { transform: scale(0.96); opacity: 0.9; }
+
+        /* مشغل الفيديو */
+        .video-wrapper {
+            width: 100%;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #1c1c1e;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            margin-bottom: 10px;
+        }
+
+        video { width: 100%; display: block; border-radius: 20px; }
+
+        .status-badge { 
+            font-size: 13px; 
+            margin-bottom: 12px; 
+            opacity: 0.6;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="status">جاري فحص حالة التحميل...</div>
-    <video id="video" controls playsinline></video>
+    <h2>التحكم عن بُعد</h2>
     
-    <div class="progress-container">
-        <div id="pBar"></div>
-    </div>
+    <div id="connectionStatus" class="status-badge">جاري المزامنة مع القاعدة...</div>
 
+    <div class="video-wrapper">
+        <video id="video" controls autoplay playsinline></video>
+    </div>
+    
     <div class="glass-card">
-        <input type="text" id="urlInput" placeholder="رابط الفيديو هنا">
-        <div class="btn-group">
-            <button class="btn-main" onclick="updateDB()">تحديث</button>
-            <button class="btn-del" onclick="clearDB()">مسح الذاكرة</button>
+        <input type="text" id="videoUrl" placeholder="الرابط سيظهر هنا تلقائياً...">
+        <div class="button-group">
+            <button onclick="updateDB()">تحديث الرابط</button>
+            <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
     </div>
 </div>
 
 <script>
+    // 1. إعدادات Firebase الأصلية
     const firebaseConfig = {
         apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
+        authDomain: "videos-5e336.firebaseapp.com",
         databaseURL: "https://videos-5e336-default-rtdb.firebaseio.com",
+        projectId: "videos-5e336",
+        storageBucket: "videos-5e336.firebasestorage.app",
+        messagingSenderId: "300218651134",
+        appId: "1:300218651134:web:4bd24df8e555e62828f0af",
+        measurementId: "G-2H4SJNLD1R"
     };
+
     firebase.initializeApp(firebaseConfig);
-    const videoRef = firebase.database().ref('currentVideo');
+    const database = firebase.database();
+    const videoRef = database.ref('currentVideo');
 
     const video = document.getElementById('video');
-    const pBar = document.getElementById('pBar');
-    const status = document.getElementById('status');
-    let downloadSession = null;
+    const urlInput = document.getElementById('videoUrl');
+    const statusBadge = document.getElementById('connectionStatus');
+    let hls = new Hls();
 
-    videoRef.on('value', async (snapshot) => {
+    // 2. الاستماع للتغييرات (نفس منطق كودك الأول)
+    videoRef.on('value', (snapshot) => {
         const url = snapshot.val();
-        if (url) {
-            startResumableDownload(url);
+        if (url && url.trim() !== "") {
+            urlInput.value = url;
+            playVideo(url);
+            statusBadge.innerText = "🟢 متصل - يتم التشغيل";
         } else {
-            status.innerText = "لا يوجد رابط";
+            urlInput.value = "";
+            video.pause();
+            video.src = "";
+            statusBadge.innerText = "⚪️ بانتظار رابط جديد...";
         }
     });
 
-    async function startResumableDownload(url) {
-        status.innerText = "🔍 فحص الأجزاء المحملة...";
-        
-        // استخدام خاصية الـ Cache للبحث عن أجزاء سابقة
-        const cache = await caches.open('video-resumable-cache');
-        const cachedResponse = await cache.match(url);
-
-        if (cachedResponse) {
-            const blob = await cachedResponse.blob();
-            video.src = URL.createObjectURL(blob);
-            pBar.style.width = '100%';
-            status.innerText = "✅ تم التحميل بالكامل من الذاكرة";
-            return;
+    // 3. وظيفة تشغيل الفيديو الأصلية
+    function playVideo(url) {
+        hls.destroy();
+        if (url.includes('.m3u8')) {
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                video.play();
+            }
+        } else {
+            video.src = url;
+            video.play().catch(e => console.log("خطأ في التشغيل التلقائي"));
         }
-
-        // إذا لم يكن مكتملاً، سنستخدم التخزين العادي (Browser Cache Control)
-        // ملاحظة: Safari يدعم الاستكمال تلقائياً إذا كان السيرفر يدعم Range Requests
-        fetchVideoWithProgress(url, cache);
     }
 
-    function fetchVideoWithProgress(url, cache) {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.responseType = 'blob';
-
-        // تفعيل ميزة استلام البيانات كأجزاء في آيفون
-        xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000');
-
-        xhr.onprogress = (e) => {
-            if (e.lengthComputable) {
-                const percent = Math.round((e.loaded / e.total) * 100);
-                pBar.style.width = percent + '%';
-                status.innerText = `جاري استكمال التحميل: ${percent}%`;
-            }
-        };
-
-        xhr.onload = function() {
-            if (this.status === 200) {
-                const blob = this.response;
-                cache.put(url, new Response(blob)); // حفظه كاملاً بعد الانتهاء
-                video.src = URL.createObjectURL(blob);
-                status.innerText = "✅ اكتمل التحميل وحُفظ";
-            }
-        };
-
-        xhr.send();
-    }
-
+    // 4. تحديث القاعدة
     function updateDB() {
-        const val = document.getElementById('urlInput').value.trim();
-        if(val) videoRef.set(val);
+        const newUrl = urlInput.value.trim();
+        if (newUrl) {
+            videoRef.set(newUrl);
+        }
     }
 
-    async function clearDB() {
-        if(confirm("سيتم مسح الفيديو المحمل كلياً، هل أنت متأكد؟")) {
+    // 5. زر المسح الجديد
+    function clearDB() {
+        if (confirm("هل تريد مسح الرابط من القاعدة؟")) {
             videoRef.set("");
-            await caches.delete('video-resumable-cache');
-            location.reload();
         }
     }
 </script>
+
 </body>
 </html>
