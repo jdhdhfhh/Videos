@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VHS Master - Pro Sync</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <title>VHS Master - Offline Ready</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
@@ -26,7 +29,6 @@
 
         .setup-container { width: 100%; max-width: 550px; }
 
-        /* --- تصميم التلفزيون الاحترافي --- */
         .pro-monitor {
             background: var(--frame-color);
             padding: 20px;
@@ -48,7 +50,6 @@
 
         video { width: 100%; height: 100%; object-fit: cover; z-index: 2; position: relative; }
 
-        /* تأثير التداخل وخطوط CRT */
         .crt-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
@@ -63,7 +64,6 @@
             text-shadow: 0 0 10px var(--screen-bg); z-index: 1;
         }
 
-        /* --- تصميم مشغل الـ VHS --- */
         .vhs-deck {
             background: var(--deck-color);
             margin-top: 20px;
@@ -130,7 +130,6 @@
             background: linear-gradient(180deg, #442222 0%, #221111 100%);
             color: #ff8888; border-color: #633;
         }
-
     </style>
 </head>
 <body>
@@ -162,7 +161,7 @@
 </div>
 
 <script>
-    /* --- كودك الأصلي كما هو بدون تغيير في الربط أو Firebase --- */
+    /* --- كود Firebase والمزامنة (لا تغيير) --- */
     const passwordSecret = "1234"; 
     let isAuthorized = false;
 
@@ -195,8 +194,13 @@
         if (snap.val() === true) {
             myPresenceRef.onDisconnect().remove();
             myPresenceRef.set(true);
+            statusBadge.innerText = isAuthorized ? "SYSTEM: ONLINE" : "SYSTEM: READY";
+        } else {
+            statusBadge.innerText = "SYSTEM: OFFLINE";
+            statusBadge.style.color = "orange";
         }
     });
+
     presenceRef.on('value', (snap) => {
         countDisplay.innerText = snap.numChildren();
     });
@@ -213,7 +217,6 @@
 
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        
         if (!data || !data.url) {
             video.src = "";
             video.style.display = "none";
@@ -223,25 +226,20 @@
             video.style.display = "block";
             errorMessage.style.display = "none";
         }
-
         isRemoteChange = true;
-
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
             if(isAuthorized) urlInput.value = data.url;
             loadVideo(data.url);
         }
-
         const timeDiff = Math.abs(video.currentTime - data.currentTime);
         if (timeDiff > 2.0) {
             video.currentTime = data.currentTime;
         }
-
         if (data.isPlaying) {
             if (video.paused) video.play().catch(() => {});
         } else {
             if (!video.paused) video.pause();
         }
-
         setTimeout(() => { isRemoteChange = false; }, 500);
     });
 
@@ -280,26 +278,37 @@
     }
 
     function updateDB() {
-        if (!isAuthorized) {
-            alert("WRONG PASSWORD");
-            return;
-        }
+        if (!isAuthorized) { alert("WRONG PASSWORD"); return; }
         const newUrl = urlInput.value.trim();
         if (newUrl) {
             syncRef.set({
-                url: newUrl,
-                currentTime: 0,
-                isPlaying: true, 
-                lastUpdated: Date.now()
+                url: newUrl, currentTime: 0, isPlaying: true, lastUpdated: Date.now()
             });
         }
     }
 
     function clearDB() {
         if (!isAuthorized) return;
-        if (confirm("EJECT TAPE FOR EVERYONE?")) {
-            syncRef.set(null);
-        }
+        if (confirm("EJECT TAPE FOR EVERYONE?")) { syncRef.set(null); }
+    }
+
+    /* --- سكربت العمل بدون إنترنت (Offline Storage) --- */
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            const swCode = `
+                const CACHE_NAME = 'vhs-cache-v1';
+                const urlsToCache = [location.href];
+                self.addEventListener('install', (event) => {
+                    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache)));
+                });
+                self.addEventListener('fetch', (event) => {
+                    event.respondWith(caches.match(event.request).then((response) => response || fetch(event.request)));
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'text/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl);
+        });
     }
 </script>
 </body>
