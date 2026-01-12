@@ -53,85 +53,102 @@
 
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    const syncRef = database.ref('videoSync'); // مرجع المزامنة الشاملة
+    const syncRef = database.ref('videoSync');
 
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
+    const statusBadge = document.getElementById('connectionStatus');
     let hls = new Hls();
-    let isUpdating = false; // لمنع التكرار اللانهائي عند المزامنة
+    let isRemoteChange = false; 
 
-    // 1. الاستماع للتغييرات من Firebase (الرابط، الوقت، الحالة)
+    // 1. الاستماع للتغييرات من Firebase
     syncRef.on('value', (snapshot) => {
-        if (isUpdating) return;
         const data = snapshot.val();
         if (!data) return;
 
-        // تحديث الرابط إذا تغير
+        // تفعيل وضع "التحديث الخارجي" لمنع إرسال البيانات مرة أخرى للقاعدة
+        isRemoteChange = true;
+
+        // تحديث الرابط (بدون تشغيل تلقائي)
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
             urlInput.value = data.url;
-            playVideo(data.url);
+            loadVideo(data.url);
         }
 
-        // مزامنة وقت الفيديو (إذا كان الفرق أكثر من ثانيتين)
-        if (Math.abs(video.currentTime - data.currentTime) > 2) {
+        // مزامنة وقت الفيديو (إذا كان الفرق أكثر من 1.5 ثانية)
+        const timeDiff = Math.abs(video.currentTime - data.currentTime);
+        if (timeDiff > 1.5) {
             video.currentTime = data.currentTime;
         }
 
-        // مزامنة التشغيل والإيقاف
-        if (data.isPlaying && video.paused) {
-            video.play().catch(() => {});
-        } else if (!data.isPlaying && !video.paused) {
-            video.pause();
+        // مزامنة التشغيل والإيقاف حسب الحالة في القاعدة
+        if (data.isPlaying) {
+            if (video.paused) video.play().catch(() => {});
+        } else {
+            if (!video.paused) video.pause();
         }
+
+        // إيقاف وضع "التحديث الخارجي" بعد معالجة البيانات
+        setTimeout(() => { isRemoteChange = false; }, 200);
+        statusBadge.innerText = "متصل - مزامن";
     });
 
-    // 2. إرسال التحديثات للقاعدة عند التقديم أو الإيقاف (من طرفك)
+    // 2. إرسال التحديثات للقاعدة (فقط عند قيام المستخدم بفعل يدوي)
     function sendSyncUpdate() {
-        isUpdating = true;
+        if (isRemoteChange) return; 
+
         syncRef.update({
             currentTime: video.currentTime,
             isPlaying: !video.paused,
             lastUpdated: Date.now()
-        }).then(() => { isUpdating = false; });
+        });
     }
 
-    // مراقبة أحداث المشغل لإرسالها لأصدقائك
     video.onplay = sendSyncUpdate;
     video.onpause = sendSyncUpdate;
     video.onseeked = sendSyncUpdate;
 
-    function playVideo(url) {
+    // تحديث دوري خفيف لضمان دقة الوقت للمشاهدين الجدد
+    setInterval(() => {
+        if (!video.paused && !isRemoteChange) {
+            syncRef.update({ currentTime: video.currentTime });
+        }
+    }, 5000);
+
+    function loadVideo(url) {
         hls.destroy();
         if (url.includes('.m3u8')) {
             if (Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
             } else {
                 video.src = url;
-                video.play();
             }
         } else {
             video.src = url;
-            video.play();
         }
+        video.pause(); // نضمن أن الفيديو يبدأ متوقفاً
     }
 
     function updateDB() {
         const newUrl = urlInput.value.trim();
         if (newUrl) {
+            // عند إضافة رابط جديد، نضبط isPlaying على false
             syncRef.set({
                 url: newUrl,
                 currentTime: 0,
-                isPlaying: true,
+                isPlaying: false, 
                 lastUpdated: Date.now()
             });
         }
     }
 
     function clearDB() {
-        if (confirm("مسح البث عند الجميع؟")) syncRef.set(null);
+        if (confirm("مسح البث عند الجميع؟")) {
+            syncRef.set(null);
+            location.reload(); 
+        }
     }
 </script>
 </body>
