@@ -18,12 +18,12 @@
         .button-group { display: flex; gap: 10px; }
         button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
+        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; position: relative; }
         video { width: 100%; display: block; }
         .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
         
-        /* إخفاء لوحة التحكم بشكل افتراضي */
         #adminControls { display: none; }
+        #muteBtn { background: rgba(255,255,255,0.15); border: 0.5px solid rgba(255,255,255,0.2); margin-top: 10px; width: 100%; }
     </style>
 </head>
 <body>
@@ -36,18 +36,19 @@
         <video id="video" playsinline muted></video>
     </div>
 
-    <div id="authSection" class="glass-card">
+    <button id="muteBtn" onclick="toggleMute()">🔊 تشغيل الصوت</button>
+
+    <div id="authSection" class="glass-card" style="margin-top: 20px;">
         <input type="password" id="adminPass" placeholder="كلمة سر المتحكم...">
         <button onclick="checkAuth()">دخول كمسؤول</button>
     </div>
 
     <div id="adminControls" class="glass-card">
-        <input type="text" id="videoUrl" placeholder="الرابط المباشر أو m3u8...">
+        <input type="text" id="videoUrl" placeholder="الرابط المباشر...">
         <div class="button-group">
             <button onclick="updateDB()">تحديث للكل</button>
-            <button class="delete-btn" onclick="clearDB()">إيقاف نهائي</button>
+            <button class="delete-btn" onclick="clearDB()">إيقاف</button>
         </div>
-        <p style="font-size: 11px; color: #888; text-align: center; margin-top: 10px;">أنت الآن المتحكم في البث</p>
     </div>
 </div>
 
@@ -69,27 +70,30 @@
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
     const statusBadge = document.getElementById('connectionStatus');
+    const muteBtn = document.getElementById('muteBtn');
     
     let hls = new Hls();
     let isRemoteChange = false; 
     let isAdmin = false; 
-    const MASTER_PASSWORD = "123"; // <--- غير كلمة السر من هنا
+    const MASTER_PASSWORD = "123"; 
 
-    // وظيفة التحقق من كلمة السر
+    function toggleMute() {
+        video.muted = !video.muted;
+        muteBtn.innerText = video.muted ? "🔊 تشغيل الصوت" : "🔇 كتم الصوت";
+    }
+
     function checkAuth() {
-        const pass = document.getElementById('adminPass').value;
-        if (pass === MASTER_PASSWORD) {
+        if (document.getElementById('adminPass').value === MASTER_PASSWORD) {
             isAdmin = true;
             document.getElementById('authSection').style.display = 'none';
             document.getElementById('adminControls').style.display = 'block';
-            video.controls = true; // تفعيل شريط التحكم للمسؤول فقط
-            alert("مرحباً أيها المسؤول");
+            video.controls = true; 
+            alert("تم التفعيل كمسؤول");
         } else {
-            alert("كلمة السر خاطئة!");
+            alert("خطأ!");
         }
     }
 
-    // 1. الاستماع للتغييرات (للكل)
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
@@ -101,27 +105,23 @@
         }
 
         const timeDiff = Math.abs(video.currentTime - data.currentTime);
-        if (timeDiff > 2) { // زيادة الهامش قليلاً لتجنب التقطيع
-            video.currentTime = data.currentTime;
-        }
+        if (timeDiff > 2) video.currentTime = data.currentTime;
 
         if (data.isPlaying) {
-            if (video.paused) video.play().catch(() => {
-                // في حال حظر المتصفح التشغيل التلقائي
-                statusBadge.innerText = "اضغط على الفيديو لتفعيل الصوت والمزامنة";
+            video.play().catch(() => {
+                video.muted = true;
+                video.play();
             });
         } else {
-            if (!video.paused) video.pause();
+            video.pause();
         }
 
         setTimeout(() => { isRemoteChange = false; }, 500);
-        statusBadge.innerText = isAdmin ? "وضع المسؤول - متصل" : "وضع المشاهد - متزامن";
+        statusBadge.innerText = isAdmin ? "وضع المسؤول" : "بث مباشر متزامن";
     });
 
-    // 2. إرسال التحديثات (للمسؤول فقط)
     function sendSyncUpdate() {
         if (!isAdmin || isRemoteChange) return; 
-
         syncRef.update({
             currentTime: video.currentTime,
             isPlaying: !video.paused,
@@ -133,7 +133,6 @@
     video.onpause = sendSyncUpdate;
     video.onseeked = sendSyncUpdate;
 
-    // تحديث دوري من قبل المسؤول فقط لضمان دقة المشاهدين
     setInterval(() => {
         if (isAdmin && !video.paused && !isRemoteChange) {
             syncRef.update({ currentTime: video.currentTime });
@@ -154,17 +153,12 @@
     function updateDB() {
         const newUrl = urlInput.value.trim();
         if (newUrl && isAdmin) {
-            syncRef.set({
-                url: newUrl,
-                currentTime: 0,
-                isPlaying: true, 
-                lastUpdated: Date.now()
-            });
+            syncRef.set({ url: newUrl, currentTime: 0, isPlaying: true, lastUpdated: Date.now() });
         }
     }
 
     function clearDB() {
-        if (isAdmin && confirm("مسح البث عند الجميع؟")) {
+        if (isAdmin && confirm("مسح؟")) {
             syncRef.set(null);
             location.reload(); 
         }
