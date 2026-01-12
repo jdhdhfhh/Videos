@@ -41,7 +41,7 @@
 </div>
 
 <script>
-    const passwordSecret = "1234"; // يمكنك تغيير كلمة السر من هنا
+    const passwordSecret = "1234"; 
     let isAuthorized = false;
 
     const firebaseConfig = {
@@ -64,7 +64,6 @@
     let hls = new Hls();
     let isRemoteChange = false; 
 
-    // نظام التحقق من كلمة السر في حقل الإدخال
     urlInput.addEventListener('input', () => {
         if (!isAuthorized && urlInput.value === passwordSecret) {
             isAuthorized = true;
@@ -81,29 +80,34 @@
 
         isRemoteChange = true;
 
+        // 1. مزامنة الرابط
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
-            // لا يتم الكتابة في الحقل إذا كان المستخدم غير مصرح له (لحمايته)
             if(isAuthorized) urlInput.value = data.url;
             loadVideo(data.url);
         }
 
+        // 2. مزامنة الوقت (التحسين: زيادة العتبة لتجنب التقطيع)
         const timeDiff = Math.abs(video.currentTime - data.currentTime);
-        if (timeDiff > 1.5) {
+        if (timeDiff > 2.0) { // تم تغييرها من 1.5 لزيادة الثبات
             video.currentTime = data.currentTime;
         }
 
+        // 3. مزامنة حالة التشغيل
         if (data.isPlaying) {
-            if (video.paused) video.play().catch(() => {});
+            if (video.paused) video.play().catch(() => {
+                statusBadge.innerText = "اضغط تشغيل للمزامنة بالصوت";
+            });
         } else {
             if (!video.paused) video.pause();
         }
 
-        setTimeout(() => { isRemoteChange = false; }, 200);
+        setTimeout(() => { isRemoteChange = false; }, 500); 
         statusBadge.innerText = "متصل - مزامن";
     });
 
-    function sendSyncUpdate() {
-        if (isRemoteChange) return; 
+    function sendSyncUpdate(eventType) {
+        if (isRemoteChange || !isAuthorized) return; 
+        
         syncRef.update({
             currentTime: video.currentTime,
             isPlaying: !video.paused,
@@ -111,15 +115,20 @@
         });
     }
 
-    video.onplay = sendSyncUpdate;
-    video.onpause = sendSyncUpdate;
-    video.onseeked = sendSyncUpdate;
+    // ربط الأحداث الأساسية فقط
+    video.onplay = () => sendSyncUpdate('play');
+    video.onpause = () => sendSyncUpdate('pause');
+    video.onseeked = () => sendSyncUpdate('seek');
 
+    // تحديث دوري (التحسين: التحديث يتم فقط إذا كان الشخص "مسؤول" لتوفير البيانات)
     setInterval(() => {
-        if (!video.paused && !isRemoteChange) {
-            syncRef.update({ currentTime: video.currentTime });
+        if (!video.paused && !isRemoteChange && isAuthorized) {
+            syncRef.update({ 
+                currentTime: video.currentTime,
+                lastUpdated: Date.now()
+            });
         }
-    }, 5000);
+    }, 7000); // زيادة الوقت لـ 7 ثواني لتقليل الضغط
 
     function loadVideo(url) {
         hls.destroy();
@@ -134,7 +143,6 @@
         } else {
             video.src = url;
         }
-        video.pause();
     }
 
     function updateDB() {
