@@ -1,1 +1,306 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VHS Master - Pro Sync</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
+    <style>
+        :root { 
+            --frame-color: #1e1e1e;
+            --deck-color: #121212;
+            --led-green: #00ff41;
+            --led-red: #ff0000;
+            --screen-bg: #0000ff;
+        }
+        
+        body { 
+            background-color: #0a0a0a; 
+            font-family: 'Courier New', monospace; 
+            display: flex; flex-direction: column; align-items: center; 
+            margin: 0; padding: 20px; color: white;
+        }
+
+        .setup-container { width: 100%; max-width: 550px; }
+
+        /* --- تصميم التلفزيون الاحترافي --- */
+        .pro-monitor {
+            background: var(--frame-color);
+            padding: 20px;
+            border-radius: 10px;
+            border: 4px solid #333;
+            box-shadow: 0 0 50px rgba(0,0,0,0.9);
+            position: relative;
+        }
+
+        .screen-bezel {
+            background: #000;
+            padding: 15px;
+            border-radius: 5px;
+            border: 2px solid #111;
+            position: relative;
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+        }
+
+        video { width: 100%; height: 100%; object-fit: cover; z-index: 2; position: relative; }
+
+        /* تأثير التداخل وخطوط CRT */
+        .crt-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.05));
+            background-size: 100% 3px, 3px 100%;
+            pointer-events: none; z-index: 3; opacity: 0.6;
+        }
+
+        #error-message {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #eee; font-size: 24px; text-align: center; font-weight: bold;
+            text-shadow: 0 0 10px var(--screen-bg); z-index: 1;
+        }
+
+        /* --- تصميم مشغل الـ VHS --- */
+        .vhs-deck {
+            background: var(--deck-color);
+            margin-top: 20px;
+            border-radius: 5px;
+            padding: 25px;
+            border: 1px solid #333;
+            border-bottom: 8px solid #000;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.8);
+        }
+
+        .deck-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .vfd-display {
+            background: #051a05;
+            color: var(--led-green);
+            padding: 8px 15px;
+            border: 2px solid #222;
+            border-radius: 3px;
+            font-size: 13px;
+            box-shadow: inset 0 0 10px #000;
+            text-shadow: 0 0 5px var(--led-green);
+        }
+
+        .cassette-slot-outer {
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 4px;
+            height: 55px;
+            display: flex; align-items: center;
+            padding: 0 15px;
+            margin-bottom: 20px;
+            position: relative;
+            box-shadow: inset 0 5px 15px #000;
+        }
+
+        .cassette-slot-outer::before {
+            content: "INSERT CASSETTE ▲";
+            position: absolute; top: -18px; left: 5px;
+            font-size: 10px; color: #555;
+        }
+
+        input {
+            width: 100%; background: transparent; border: none;
+            color: var(--led-green); font-family: 'Courier New', monospace;
+            font-size: 16px; outline: none;
+        }
+
+        .deck-buttons { display: flex; gap: 12px; }
+
+        button {
+            flex: 1; padding: 12px; border-radius: 4px; border: 1px solid #444;
+            background: linear-gradient(180deg, #333 0%, #1a1a1a 100%);
+            color: #ddd; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 0 #000; font-size: 11px;
+            text-transform: uppercase; transition: 0.1s;
+        }
+
+        button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
+        
+        button.eject-btn {
+            background: linear-gradient(180deg, #442222 0%, #221111 100%);
+            color: #ff8888; border-color: #633;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="setup-container">
+    <div class="pro-monitor">
+        <div class="screen-bezel">
+            <div class="crt-overlay"></div>
+            <div id="error-message">NO SIGNAL<br>1998-01-12</div>
+            <video id="video" controls playsinline muted></video>
+        </div>
+    </div>
+
+    <div class="vhs-deck">
+        <div class="deck-header">
+            <div class="vfd-display" id="connectionStatus">SYSTEM: STANDBY</div>
+            <div class="vfd-display">LIVE: <span id="count">1</span></div>
+        </div>
+        
+        <div class="cassette-slot-outer">
+            <input type="password" id="videoUrl" placeholder="ENTER ACCESS CODE">
+        </div>
+        
+        <div class="deck-buttons">
+            <button onclick="updateDB()">▶ PLAY / SYNC</button>
+            <button class="eject-btn" onclick="clearDB()">⏏ EJECT TAPE</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* --- كودك الأصلي كما هو بدون تغيير في الربط أو Firebase --- */
+    const passwordSecret = "1234"; 
+    let isAuthorized = false;
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
+        authDomain: "videos-5e336.firebaseapp.com",
+        databaseURL: "https://videos-5e336-default-rtdb.firebaseio.com",
+        projectId: "videos-5e336",
+        storageBucket: "videos-5e336.firebasestorage.app",
+        messagingSenderId: "300218651134",
+        appId: "1:300218651134:web:4bd24df8e555e62828f0af"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const syncRef = database.ref('videoSync');
+    const presenceRef = database.ref('viewers');
+
+    const video = document.getElementById('video');
+    const urlInput = document.getElementById('videoUrl');
+    const statusBadge = document.getElementById('connectionStatus');
+    const countDisplay = document.getElementById('count');
+    const errorMessage = document.getElementById('error-message');
+    
+    let hls = new Hls();
+    let isRemoteChange = false; 
+
+    const myPresenceRef = presenceRef.push();
+    database.ref('.info/connected').on('value', (snap) => {
+        if (snap.val() === true) {
+            myPresenceRef.onDisconnect().remove();
+            myPresenceRef.set(true);
+        }
+    });
+    presenceRef.on('value', (snap) => {
+        countDisplay.innerText = snap.numChildren();
+    });
+
+    urlInput.addEventListener('input', () => {
+        if (!isAuthorized && urlInput.value === passwordSecret) {
+            isAuthorized = true;
+            urlInput.value = ""; 
+            urlInput.type = "text"; 
+            urlInput.placeholder = "PASTE URL HERE";
+            statusBadge.innerText = "SYSTEM: ADMIN";
+        }
+    });
+
+    syncRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        
+        if (!data || !data.url) {
+            video.src = "";
+            video.style.display = "none";
+            errorMessage.style.display = "block";
+            return;
+        } else {
+            video.style.display = "block";
+            errorMessage.style.display = "none";
+        }
+
+        isRemoteChange = true;
+
+        if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
+            if(isAuthorized) urlInput.value = data.url;
+            loadVideo(data.url);
+        }
+
+        const timeDiff = Math.abs(video.currentTime - data.currentTime);
+        if (timeDiff > 2.0) {
+            video.currentTime = data.currentTime;
+        }
+
+        if (data.isPlaying) {
+            if (video.paused) video.play().catch(() => {});
+        } else {
+            if (!video.paused) video.pause();
+        }
+
+        setTimeout(() => { isRemoteChange = false; }, 500);
+    });
+
+    function sendSyncUpdate() {
+        if (isRemoteChange || !isAuthorized) return; 
+        syncRef.update({
+            currentTime: video.currentTime,
+            isPlaying: !video.paused,
+            lastUpdated: Date.now()
+        });
+    }
+
+    video.onplay = sendSyncUpdate;
+    video.onpause = sendSyncUpdate;
+    video.onseeked = sendSyncUpdate;
+
+    setInterval(() => {
+        if (!video.paused && !isRemoteChange && isAuthorized) {
+            syncRef.update({ currentTime: video.currentTime });
+        }
+    }, 7000);
+
+    function loadVideo(url) {
+        hls.destroy();
+        if (url.includes('.m3u8')) {
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+            } else {
+                video.src = url;
+            }
+        } else {
+            video.src = url;
+        }
+    }
+
+    function updateDB() {
+        if (!isAuthorized) {
+            alert("WRONG PASSWORD");
+            return;
+        }
+        const newUrl = urlInput.value.trim();
+        if (newUrl) {
+            syncRef.set({
+                url: newUrl,
+                currentTime: 0,
+                isPlaying: true, 
+                lastUpdated: Date.now()
+            });
+        }
+    }
+
+    function clearDB() {
+        if (!isAuthorized) return;
+        if (confirm("EJECT TAPE FOR EVERYONE?")) {
+            syncRef.set(null);
+        }
+    }
+</script>
+</body>
+</html>
