@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Player - iOS Style</title>
+    <title>Smart Player - Fast Load</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
@@ -13,11 +13,11 @@
             --ios-bg: #000000;
             --ios-card: rgba(28, 28, 30, 0.8);
             --ios-accent: #0A84FF; 
-            --ios-red: #FF3B30;   /* أحمر نظام iOS */
+            --ios-red: #FF3B30;
         }
 
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
             background-color: var(--ios-bg); 
             color: white; 
             margin: 0;
@@ -29,7 +29,7 @@
 
         .container { width: 100%; max-width: 600px; }
 
-        h2 { font-weight: 600; font-size: 24px; letter-spacing: -0.5px; margin-bottom: 25px; text-align: center; }
+        h2 { font-weight: 600; font-size: 22px; margin-bottom: 20px; text-align: center; }
 
         .glass-card {
             background: var(--ios-card);
@@ -37,7 +37,6 @@
             -webkit-backdrop-filter: blur(20px);
             border-radius: 20px;
             padding: 20px;
-            margin-bottom: 20px;
             border: 0.5px solid rgba(255,255,255,0.1);
         }
 
@@ -55,10 +54,7 @@
             text-align: center;
         }
 
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
+        .button-group { display: flex; gap: 10px; }
 
         button { 
             flex: 2;
@@ -69,8 +65,6 @@
             color: white; 
             font-size: 16px;
             font-weight: 600; 
-            transition: 0.2s;
-            -webkit-tap-highlight-color: transparent;
         }
 
         button.delete-btn {
@@ -79,40 +73,21 @@
             color: var(--ios-red);
         }
 
-        button:active { transform: scale(0.97); opacity: 0.8; }
-
         .video-wrapper {
-            position: relative;
             width: 100%;
             border-radius: 20px;
             overflow: hidden;
             background: #1c1c1e;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
+        /* تم حذف شريط التحميل لعدم الحاجة له الآن */
         video { width: 100%; display: block; border-radius: 20px; }
-
-        #loader-container {
-            width: 100%;
-            height: 4px;
-            background: rgba(255,255,255,0.1);
-            margin-top: 10px;
-            border-radius: 2px;
-            display: none;
-        }
-        #loader-bar {
-            width: 0%;
-            height: 100%;
-            background: var(--ios-accent);
-            border-radius: 2px;
-            transition: width 0.3s;
-        }
 
         .status-badge { 
             font-size: 13px; 
             margin-bottom: 12px; 
             opacity: 0.7;
-            font-weight: 500;
             text-align: center;
         }
     </style>
@@ -122,20 +97,16 @@
 <div class="container">
     <h2>التحكم عن بُعد</h2>
     
-    <div id="connectionStatus" class="status-badge">جاري المزامنة...</div>
+    <div id="connectionStatus" class="status-badge">جاري الاتصال...</div>
 
     <div class="video-wrapper">
-        <video id="video" controls playsinline></video>
+        <video id="video" controls playsinline preload="auto"></video>
     </div>
     
-    <div id="loader-container">
-        <div id="loader-bar"></div>
-    </div>
-
     <br>
 
     <div class="glass-card">
-        <input type="text" id="videoUrl" placeholder="أدخل الرابط الجديد هنا...">
+        <input type="text" id="videoUrl" placeholder="أدخل الرابط الجديد...">
         <div class="button-group">
             <button onclick="updateDB()">تحديث الرابط</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
@@ -159,8 +130,6 @@
     const videoRef = database.ref('currentVideo');
 
     const video = document.getElementById('video');
-    const loaderContainer = document.getElementById('loader-container');
-    const loaderBar = document.getElementById('loader-bar');
     const statusBadge = document.getElementById('connectionStatus');
     const urlInput = document.getElementById('videoUrl');
 
@@ -168,72 +137,36 @@
         const url = snapshot.val();
         if (url && url.trim() !== "") {
             urlInput.value = url;
-            handleVideoLoad(url);
+            playVideo(url);
         } else {
-            // في حال تم مسح الرابط من القاعدة
             urlInput.value = "";
             video.pause();
-            video.removeAttribute('src');
-            video.load();
-            statusBadge.innerText = "⚠️ لا يوجد رابط محفوظ حالياً";
-            loaderContainer.style.display = 'none';
+            video.src = "";
+            statusBadge.innerText = "⚠️ لا يوجد فيديو حالياً";
         }
     });
 
-    async function handleVideoLoad(url) {
-        if (url.includes('.m3u8')) {
-            loaderContainer.style.display = 'none';
-            statusBadge.innerText = "📺 تشغيل بث مباشر...";
-            video.src = url;
-            video.play().catch(() => {});
-        } else {
-            downloadVideo(url);
-        }
-    }
-
-    function downloadVideo(url) {
-        loaderContainer.style.display = 'block';
-        loaderBar.style.width = '0%';
-        statusBadge.innerText = "⏳ جاري التحميل (0%)";
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.responseType = 'blob';
-
-        xhr.onprogress = (e) => {
-            if (e.lengthComputable) {
-                const percent = (e.loaded / e.total) * 100;
-                loaderBar.style.width = percent + '%';
-                statusBadge.innerText = `⏳ جاري التحميل (${Math.round(percent)}%)`;
-            }
-        };
-
-        xhr.onload = function() {
-            if (this.status === 200) {
-                video.src = URL.createObjectURL(this.response);
-                statusBadge.innerText = "✅ جاهز للعرض";
-                video.play().catch(() => {});
-                setTimeout(() => loaderContainer.style.display = 'none', 1000);
-            }
-        };
-
-        xhr.send();
+    function playVideo(url) {
+        statusBadge.innerText = "⚡ جاري التشغيل المباشر...";
+        
+        // إذا كان آيفون، سيتولى المتصفح إدارة الكاش تلقائياً
+        video.src = url;
+        video.load(); // أمر المتصفح بالبدء في جلب البيانات فوراً
+        
+        video.play().then(() => {
+            statusBadge.innerText = "🟢 متصل - يعرض الآن";
+        }).catch(() => {
+            statusBadge.innerText = "⏸️ بانتظار ضغطك على زر التشغيل";
+        });
     }
 
     function updateDB() {
         const newUrl = urlInput.value.trim();
-        if (newUrl) {
-            videoRef.set(newUrl);
-            statusBadge.innerText = "🔄 جاري التحديث...";
-        }
+        if (newUrl) videoRef.set(newUrl);
     }
 
     function clearDB() {
-        if (confirm("هل تريد بالتأكيد مسح الرابط المحفوظ؟")) {
-            videoRef.set(""); // مسح القيمة في فايربيس
-            urlInput.value = "";
-            statusBadge.innerText = "🗑️ تم المسح بنجاح";
-        }
+        if (confirm("هل تريد مسح الرابط؟")) videoRef.set("");
     }
 </script>
 
