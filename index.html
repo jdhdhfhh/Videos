@@ -18,8 +18,32 @@
         .button-group { display: flex; gap: 10px; }
         button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        video { width: 100%; display: block; }
+        
+        /* التعديل هنا لإضافة النص فوق الفيديو */
+        .video-wrapper { 
+            width: 100%; 
+            border-radius: 20px; 
+            overflow: hidden; 
+            background: #1c1c1e; 
+            margin-bottom: 10px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+            position: relative; 
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        video { width: 100%; display: block; height: 100%; object-fit: cover; z-index: 1; }
+        
+        #error-message {
+            position: absolute;
+            color: rgba(255,255,255,0.5);
+            font-size: 24px;
+            font-weight: bold;
+            z-index: 0;
+            display: none; /* مخفي افتراضياً */
+        }
+
         .status-container { display: flex; justify-content: center; gap: 15px; margin-bottom: 12px; font-size: 13px; opacity: 0.8; }
         .status-badge { color: #fff; }
         .viewer-count { color: var(--ios-green); font-weight: bold; }
@@ -35,6 +59,7 @@
     </div>
     
     <div class="video-wrapper">
+        <div id="error-message">🛠️ الدش خربان</div>
         <video id="video" controls playsinline muted></video>
     </div>
 
@@ -70,24 +95,21 @@
     const urlInput = document.getElementById('videoUrl');
     const statusBadge = document.getElementById('connectionStatus');
     const countDisplay = document.getElementById('count');
+    const errorMessage = document.getElementById('error-message');
     
     let hls = new Hls();
     let isRemoteChange = false; 
 
-    // --- ميزة عداد المتصلين ---
     const myPresenceRef = presenceRef.push();
-    // عند الاتصال أو قطع الاتصال
     database.ref('.info/connected').on('value', (snap) => {
         if (snap.val() === true) {
             myPresenceRef.onDisconnect().remove();
             myPresenceRef.set(true);
         }
     });
-    // الاستماع لعدد المتصلين
     presenceRef.on('value', (snap) => {
         countDisplay.innerText = snap.numChildren();
     });
-    // -----------------------
 
     urlInput.addEventListener('input', () => {
         if (!isAuthorized && urlInput.value === passwordSecret) {
@@ -101,7 +123,18 @@
 
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        
+        // التعديل هنا: إذا لم تتوفر بيانات (الرابط محذوف)
+        if (!data || !data.url) {
+            video.src = "";
+            video.style.display = "none"; // إخفاء المشغل
+            errorMessage.style.display = "block"; // إظهار العبارة
+            return;
+        } else {
+            video.style.display = "block"; // إظهار المشغل
+            errorMessage.style.display = "none"; // إخفاء العبارة
+        }
+
         isRemoteChange = true;
 
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
@@ -121,7 +154,7 @@
         }
 
         setTimeout(() => { isRemoteChange = false; }, 500);
-        statusBadge.innerText = "رجع دسع خلاص";
+        statusBadge.innerText = "متصل";
     });
 
     function sendSyncUpdate() {
@@ -178,7 +211,6 @@
         if (!isAuthorized) return;
         if (confirm("مسح البث عند الجميع؟")) {
             syncRef.set(null);
-            location.reload(); 
         }
     }
 </script>
