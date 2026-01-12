@@ -10,66 +10,33 @@
 
     <style>
         :root { --ios-bg: #000000; --ios-card: rgba(28, 28, 30, 0.85); --ios-accent: #0A84FF; --ios-red: #FF3B30; }
-        body { font-family: -apple-system, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
-        .container { width: 100%; max-width: 500px; transition: all 0.5s ease; }
-        
-        body.viewer-mode .admin-only { display: none; }
-        body.viewer-mode h2 { display: none; }
-        
-        h2 { font-weight: 600; text-align: center; margin-bottom: 20px; }
-        .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); margin-top: 20px; }
-        
-        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; box-sizing: border-box; }
-        
+        body { font-family: -apple-system, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 500px; }
+        h2 { font-weight: 600; text-align: center; }
+        .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); }
+        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; }
         .button-group { display: flex; gap: 10px; }
         button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        
-        /* حاوية الفيديو وزر الصوت */
-        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        video { width: 100%; display: block; pointer-events: none; } 
-        body.admin-mode video { pointer-events: auto; }
-
-        /* زر تشغيل الصوت للمشاهدين */
-        .unmute-banner {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--ios-accent);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 30px;
-            font-weight: bold;
-            cursor: pointer;
-            z-index: 100;
-            box-shadow: 0 4px 15px rgba(10, 132, 255, 0.4);
-            display: none; /* يظهر فقط عند الحاجة */
-        }
-
-        .auth-section { margin-top: 20px; font-size: 13px; opacity: 0.6; cursor: pointer; text-align: center; padding: 10px; }
+        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
+        video { width: 100%; display: block; }
+        .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
     </style>
 </head>
-<body class="viewer-mode">
+<body>
 
 <div class="container">
-    <h2>بث متزامن (المسؤول)</h2>
-    
+    <h2>بث متزامن</h2>
+    <div id="connectionStatus" class="status-badge">جاري المزامنة...</div>
     <div class="video-wrapper">
-        <div id="unmuteBtn" class="unmute-banner" onclick="enableSound()">🔈 اضغط لتشغيل الصوت</div>
-        <video id="video" playsinline muted></video>
+        <video id="video" controls playsinline muted></video>
     </div>
-
-    <div class="glass-card admin-only">
-        <input type="text" id="videoUrl" placeholder="رابط البث (m3u8 أو mp4)...">
+    <div class="glass-card">
+        <input type="text" id="videoUrl" placeholder="الرابط...">
         <div class="button-group">
-            <button onclick="updateDB()">تحديث الرابط للجميع</button>
+            <button onclick="updateDB()">تحديث الرابط للكل</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
-    </div>
-
-    <div id="loginArea" class="auth-section" onclick="askForPass()">
-        🔒 وضع المشاهدة (انقر لإدخال كلمة السر)
     </div>
 </div>
 
@@ -86,67 +53,40 @@
 
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    const syncRef = database.ref('videoSync');
+    const syncRef = database.ref('videoSync'); // مرجع المزامنة الشاملة
 
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
-    const unmuteBtn = document.getElementById('unmuteBtn');
     let hls = new Hls();
-    let isUpdating = false;
-    let isAdmin = false;
-    const MASTER_PASS = "1234"; // يمكنك تغيير كلمة السر هنا
+    let isUpdating = false; // لمنع التكرار اللانهائي عند المزامنة
 
-    // تفعيل الصوت
-    function enableSound() {
-        video.muted = false;
-        unmuteBtn.style.display = 'none';
-        video.play().catch(() => {});
-    }
-
-    // التحقق من المسؤول
-    function askForPass() {
-        const pass = prompt("أدخل كلمة السر للتحكم:");
-        if (pass === MASTER_PASS) {
-            isAdmin = true;
-            document.body.classList.remove('viewer-mode');
-            document.body.classList.add('admin-mode');
-            video.controls = true; 
-            video.muted = false;
-            unmuteBtn.style.display = 'none';
-            document.getElementById('loginArea').innerText = "✅ أنت المسؤول الآن";
-        } else {
-            alert("كلمة سر خاطئة!");
-        }
-    }
-
-    // مزامنة البيانات
+    // 1. الاستماع للتغييرات من Firebase (الرابط، الوقت، الحالة)
     syncRef.on('value', (snapshot) => {
-        if (isUpdating && isAdmin) return;
+        if (isUpdating) return;
         const data = snapshot.val();
         if (!data) return;
 
+        // تحديث الرابط إذا تغير
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
+            urlInput.value = data.url;
             playVideo(data.url);
         }
 
+        // مزامنة وقت الفيديو (إذا كان الفرق أكثر من ثانيتين)
         if (Math.abs(video.currentTime - data.currentTime) > 2) {
             video.currentTime = data.currentTime;
         }
 
-        if (data.isPlaying) {
-            video.play().catch(() => {
-                // إذا رفض المتصفح التشغيل بالصوت، نشغله صامتاً ونظهر زر التفعيل
-                video.muted = true;
-                video.play();
-                if (!isAdmin) unmuteBtn.style.display = 'block';
-            });
-        } else {
+        // مزامنة التشغيل والإيقاف
+        if (data.isPlaying && video.paused) {
+            video.play().catch(() => {});
+        } else if (!data.isPlaying && !video.paused) {
             video.pause();
         }
     });
 
+    // 2. إرسال التحديثات للقاعدة عند التقديم أو الإيقاف (من طرفك)
     function sendSyncUpdate() {
-        if (!isAdmin) return; 
         isUpdating = true;
         syncRef.update({
             currentTime: video.currentTime,
@@ -155,18 +95,22 @@
         }).then(() => { isUpdating = false; });
     }
 
+    // مراقبة أحداث المشغل لإرسالها لأصدقائك
     video.onplay = sendSyncUpdate;
     video.onpause = sendSyncUpdate;
     video.onseeked = sendSyncUpdate;
 
     function playVideo(url) {
+        hls.destroy();
         if (url.includes('.m3u8')) {
             if (Hls.isSupported()) {
-                hls.destroy();
                 hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+            } else {
+                video.src = url;
+                video.play();
             }
         } else {
             video.src = url;
@@ -175,7 +119,6 @@
     }
 
     function updateDB() {
-        if (!isAdmin) return;
         const newUrl = urlInput.value.trim();
         if (newUrl) {
             syncRef.set({
@@ -188,7 +131,7 @@
     }
 
     function clearDB() {
-        if (isAdmin && confirm("مسح البث عند الجميع؟")) syncRef.set(null);
+        if (confirm("مسح البث عند الجميع؟")) syncRef.set(null);
     }
 </script>
 </body>
