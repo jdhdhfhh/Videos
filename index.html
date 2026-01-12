@@ -14,15 +14,11 @@
         .container { width: 100%; max-width: 500px; }
         h2 { font-weight: 600; text-align: center; }
         .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); }
-        
-        /* تحسين مظهر الحقول */
-        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 12px; text-align: center; outline: none; box-sizing: border-box; transition: 0.3s; }
-        input:focus { background: rgba(255,255,255,0.15); border: 0.5px solid var(--ios-accent); }
-        
+        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; transition: 0.3s; }
         .button-group { display: flex; gap: 10px; }
         button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 15px; }
+        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
         video { width: 100%; display: block; }
         .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
     </style>
@@ -35,19 +31,19 @@
     <div class="video-wrapper">
         <video id="video" controls playsinline muted></video>
     </div>
-    
     <div class="glass-card">
-        <input type="password" id="adminPassword" placeholder="كلمة السر للتحكم">
-        <input type="text" id="videoUrl" placeholder="ضع رابط الفيديو هنا...">
-        
+        <input type="password" id="videoUrl" placeholder="أدخل كلمة السر لفتح التحكم...">
         <div class="button-group">
-            <button onclick="updateDB()">تحديث للكل</button>
+            <button onclick="updateDB()">تحديث الرابط للكل</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
     </div>
 </div>
 
 <script>
+    const passwordSecret = "1234"; // يمكنك تغيير كلمة السر من هنا
+    let isAuthorized = false;
+
     const firebaseConfig = {
         apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
         authDomain: "videos-5e336.firebaseapp.com",
@@ -62,28 +58,46 @@
     const database = firebase.database();
     const syncRef = database.ref('videoSync');
 
-    // --- كلمة السر ---
-    const SECRET_PASSWORD = "1234"; 
-
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
-    const passInput = document.getElementById('adminPassword');
     const statusBadge = document.getElementById('connectionStatus');
     let hls = new Hls();
     let isRemoteChange = false; 
 
+    // نظام التحقق من كلمة السر في حقل الإدخال
+    urlInput.addEventListener('input', () => {
+        if (!isAuthorized && urlInput.value === passwordSecret) {
+            isAuthorized = true;
+            urlInput.value = ""; 
+            urlInput.type = "text"; 
+            urlInput.placeholder = "تم الفتح.. ضع الرابط الجديد";
+            urlInput.style.background = "rgba(10, 132, 255, 0.15)";
+        }
+    });
+
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
+
         isRemoteChange = true;
+
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
-            urlInput.value = data.url;
+            // لا يتم الكتابة في الحقل إذا كان المستخدم غير مصرح له (لحمايته)
+            if(isAuthorized) urlInput.value = data.url;
             loadVideo(data.url);
         }
+
         const timeDiff = Math.abs(video.currentTime - data.currentTime);
-        if (timeDiff > 1.5) { video.currentTime = data.currentTime; }
-        if (data.isPlaying) { if (video.paused) video.play().catch(() => {}); } 
-        else { if (!video.paused) video.pause(); }
+        if (timeDiff > 1.5) {
+            video.currentTime = data.currentTime;
+        }
+
+        if (data.isPlaying) {
+            if (video.paused) video.play().catch(() => {});
+        } else {
+            if (!video.paused) video.pause();
+        }
+
         setTimeout(() => { isRemoteChange = false; }, 200);
         statusBadge.innerText = "متصل - مزامن";
     });
@@ -114,14 +128,18 @@
                 hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
-            } else { video.src = url; }
-        } else { video.src = url; }
-        video.pause(); 
+            } else {
+                video.src = url;
+            }
+        } else {
+            video.src = url;
+        }
+        video.pause();
     }
 
     function updateDB() {
-        if (passInput.value !== SECRET_PASSWORD) {
-            alert("كلمة السر غير صحيحة!");
+        if (!isAuthorized) {
+            alert("يرجى إدخال كلمة السر أولاً في خانة الرابط");
             return;
         }
         const newUrl = urlInput.value.trim();
@@ -131,21 +149,18 @@
                 currentTime: 0,
                 isPlaying: false, 
                 lastUpdated: Date.now()
-            }).then(() => {
-                passInput.value = ""; 
             });
         }
     }
 
     function clearDB() {
-        if (passInput.value !== SECRET_PASSWORD) {
-            alert("كلمة السر غير صحيحة!");
+        if (!isAuthorized) {
+            alert("ممنوع: أدخل كلمة السر أولاً");
             return;
         }
         if (confirm("مسح البث عند الجميع؟")) {
-            syncRef.set(null).then(() => {
-                location.reload(); 
-            });
+            syncRef.set(null);
+            location.reload(); 
         }
     }
 </script>
