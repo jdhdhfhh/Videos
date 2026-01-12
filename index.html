@@ -3,87 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Player - iOS Design</title>
+    <title>Smart Player - Sync Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
     <style>
-        :root {
-            --ios-bg: #000000;
-            --ios-card: rgba(28, 28, 30, 0.85);
-            --ios-accent: #0A84FF;
-            --ios-red: #FF3B30;
-        }
-
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            background-color: var(--ios-bg); 
-            color: white; 
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
+        :root { --ios-bg: #000000; --ios-card: rgba(28, 28, 30, 0.85); --ios-accent: #0A84FF; --ios-red: #FF3B30; }
+        body { font-family: -apple-system, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 500px; }
-
-        h2 { font-weight: 600; font-size: 24px; letter-spacing: -0.5px; margin-bottom: 25px; text-align: center; }
-
-        .glass-card {
-            background: var(--ios-card);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 20px;
-            border: 0.5px solid rgba(255,255,255,0.1);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-
-        input { 
-            width: 100%; padding: 14px; border-radius: 12px; border: none; 
-            background: rgba(255,255,255,0.1); color: white; font-size: 16px;
-            margin-bottom: 15px; outline: none; box-sizing: border-box; text-align: center;
-        }
-
+        h2 { font-weight: 600; text-align: center; }
+        .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); }
+        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; }
         .button-group { display: flex; gap: 10px; }
-
-        button { 
-            flex: 2; padding: 14px; border-radius: 12px; border: none; 
-            background-color: var(--ios-accent); color: white; font-size: 16px;
-            font-weight: 600; transition: transform 0.2s; -webkit-tap-highlight-color: transparent;
-        }
-
+        button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-
-        button:active { transform: scale(0.96); opacity: 0.9; }
-
-        .video-wrapper {
-            width: 100%; border-radius: 20px; overflow: hidden;
-            background: #1c1c1e; box-shadow: 0 20px 40px rgba(0,0,0,0.6); margin-bottom: 10px;
-        }
-
-        video { width: 100%; display: block; border-radius: 20px; }
-
+        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
+        video { width: 100%; display: block; }
         .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>التحكم عن بُعد</h2>
-    
-    <div id="connectionStatus" class="status-badge">جاري المزامنة مع القاعدة...</div>
-
+    <h2>بث متزامن</h2>
+    <div id="connectionStatus" class="status-badge">جاري المزامنة...</div>
     <div class="video-wrapper">
-        <video id="video" controls autoplay playsinline muted></video>
+        <video id="video" controls playsinline muted></video>
     </div>
-    
     <div class="glass-card">
-        <input type="text" id="videoUrl" placeholder="الرابط سيظهر هنا تلقائياً...">
+        <input type="text" id="videoUrl" placeholder="الرابط...">
         <div class="button-group">
-            <button onclick="updateDB()">تحديث الرابط</button>
+            <button onclick="updateDB()">تحديث الرابط للكل</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
     </div>
@@ -97,65 +48,91 @@
         projectId: "videos-5e336",
         storageBucket: "videos-5e336.firebasestorage.app",
         messagingSenderId: "300218651134",
-        appId: "1:300218651134:web:4bd24df8e555e62828f0af",
-        measurementId: "G-2H4SJNLD1R"
+        appId: "1:300218651134:web:4bd24df8e555e62828f0af"
     };
 
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    const videoRef = database.ref('currentVideo');
+    const syncRef = database.ref('videoSync'); // مرجع المزامنة الشاملة
 
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
-    const statusBadge = document.getElementById('connectionStatus');
     let hls = new Hls();
+    let isUpdating = false; // لمنع التكرار اللانهائي عند المزامنة
 
-    videoRef.on('value', (snapshot) => {
-        const url = snapshot.val();
-        if (url && url.trim() !== "") {
-            urlInput.value = url;
-            playVideo(url);
-            statusBadge.innerText = "🟢 متصل - يتم التشغيل";
-        } else {
-            urlInput.value = "";
+    // 1. الاستماع للتغييرات من Firebase (الرابط، الوقت، الحالة)
+    syncRef.on('value', (snapshot) => {
+        if (isUpdating) return;
+        const data = snapshot.val();
+        if (!data) return;
+
+        // تحديث الرابط إذا تغير
+        if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
+            urlInput.value = data.url;
+            playVideo(data.url);
+        }
+
+        // مزامنة وقت الفيديو (إذا كان الفرق أكثر من ثانيتين)
+        if (Math.abs(video.currentTime - data.currentTime) > 2) {
+            video.currentTime = data.currentTime;
+        }
+
+        // مزامنة التشغيل والإيقاف
+        if (data.isPlaying && video.paused) {
+            video.play().catch(() => {});
+        } else if (!data.isPlaying && !video.paused) {
             video.pause();
-            video.src = "";
-            statusBadge.innerText = "⚪️ بانتظار رابط جديد...";
         }
     });
 
+    // 2. إرسال التحديثات للقاعدة عند التقديم أو الإيقاف (من طرفك)
+    function sendSyncUpdate() {
+        isUpdating = true;
+        syncRef.update({
+            currentTime: video.currentTime,
+            isPlaying: !video.paused,
+            lastUpdated: Date.now()
+        }).then(() => { isUpdating = false; });
+    }
+
+    // مراقبة أحداث المشغل لإرسالها لأصدقائك
+    video.onplay = sendSyncUpdate;
+    video.onpause = sendSyncUpdate;
+    video.onseeked = sendSyncUpdate;
+
     function playVideo(url) {
         hls.destroy();
-        // إجبار الفيديو على التشغيل الصامت أولاً لضمان القبول من المتصفح
-        video.muted = true;
-
         if (url.includes('.m3u8')) {
             if (Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    video.play().catch(e => console.log("Auto-play blocked"));
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+            } else {
                 video.src = url;
                 video.play();
             }
         } else {
             video.src = url;
-            video.play().catch(e => console.log("Auto-play blocked"));
+            video.play();
         }
     }
 
     function updateDB() {
         const newUrl = urlInput.value.trim();
-        if (newUrl) { videoRef.set(newUrl); }
+        if (newUrl) {
+            syncRef.set({
+                url: newUrl,
+                currentTime: 0,
+                isPlaying: true,
+                lastUpdated: Date.now()
+            });
+        }
     }
 
     function clearDB() {
-        if (confirm("هل تريد مسح الرابط من القاعدة؟")) { videoRef.set(""); }
+        if (confirm("مسح البث عند الجميع؟")) syncRef.set(null);
     }
 </script>
-
 </body>
 </html>
