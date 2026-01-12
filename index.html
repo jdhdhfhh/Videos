@@ -10,16 +10,17 @@
 
     <style>
         :root { --ios-bg: #000000; --ios-card: rgba(28, 28, 30, 0.85); --ios-accent: #0A84FF; --ios-red: #FF3B30; }
-        body { font-family: -apple-system, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 500px; }
-        h2 { font-weight: 600; text-align: center; }
+        h2 { font-weight: 600; text-align: center; margin-bottom: 5px; }
         .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); }
-        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; transition: 0.3s; }
+        input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; transition: 0.3s; box-sizing: border-box; }
         .button-group { display: flex; gap: 10px; }
-        button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
+        button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:active { opacity: 0.7; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
-        video { width: 100%; display: block; }
+        .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); }
+        video { width: 100%; aspect-ratio: 16/9; display: block; }
         .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
     </style>
 </head>
@@ -27,22 +28,23 @@
 
 <div class="container">
     <h2>بث متزامن</h2>
-    <div id="connectionStatus" class="status-badge">جاري المزامنة...</div>
+    <div id="connectionStatus" class="status-badge">جاري الاتصال بقاعدة البيانات...</div>
     <div class="video-wrapper">
         <video id="video" controls playsinline muted></video>
     </div>
     <div class="glass-card">
-        <input type="password" id="videoUrl" placeholder="أدخل كلمة السر لفتح التحكم...">
+        <input type="password" id="videoUrl" placeholder="أدخل كلمة السر للتحكم...">
         <div class="button-group">
-            <button onclick="updateDB()">تحديث الرابط للكل</button>
+            <button onclick="updateDB()">تحديث للكل</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
     </div>
 </div>
 
 <script>
-    const passwordSecret = "1234"; // يمكنك تغيير كلمة السر من هنا
+    const passwordSecret = "1234"; 
     let isAuthorized = false;
+    let currentActiveUrl = "";
 
     const firebaseConfig = {
         apiKey: "AIzaSyAjTD-OJBUYewp5bqV0iVh4Rxp5zjBsU54",
@@ -62,48 +64,73 @@
     const urlInput = document.getElementById('videoUrl');
     const statusBadge = document.getElementById('connectionStatus');
     let hls = new Hls();
-    let isRemoteChange = false; 
 
-    // نظام التحقق من كلمة السر في حقل الإدخال
+    // التحقق من كلمة السر
     urlInput.addEventListener('input', () => {
         if (!isAuthorized && urlInput.value === passwordSecret) {
             isAuthorized = true;
-            urlInput.value = ""; 
+            urlInput.value = currentActiveUrl; 
             urlInput.type = "text"; 
-            urlInput.placeholder = "تم الفتح.. ضع الرابط الجديد";
-            urlInput.style.background = "rgba(10, 132, 255, 0.15)";
+            urlInput.placeholder = "ضع رابط m3u8 الجديد هنا";
+            urlInput.style.background = "rgba(10, 132, 255, 0.2)";
         }
     });
 
+    // استماع للتغييرات من Firebase
     syncRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            statusBadge.innerText = "لا يوجد بث نشط حالياً";
+            return;
+        }
 
-        isRemoteChange = true;
-
-        if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
-            // لا يتم الكتابة في الحقل إذا كان المستخدم غير مصرح له (لحمايته)
+        // تحديث الرابط إذا تغير
+        if (data.url && data.url !== currentActiveUrl) {
+            currentActiveUrl = data.url;
             if(isAuthorized) urlInput.value = data.url;
             loadVideo(data.url);
         }
 
+        // مزامنة الوقت (فقط إذا كان الفرق كبيراً لتجنب التقطيع)
         const timeDiff = Math.abs(video.currentTime - data.currentTime);
-        if (timeDiff > 1.5) {
+        if (timeDiff > 2.5) {
             video.currentTime = data.currentTime;
         }
 
-        if (data.isPlaying) {
-            if (video.paused) video.play().catch(() => {});
-        } else {
-            if (!video.paused) video.pause();
+        // مزامنة حالة التشغيل
+        if (data.isPlaying && video.paused) {
+            video.play().catch(e => console.log("Play blocked by browser"));
+        } else if (!data.isPlaying && !video.paused) {
+            video.pause();
         }
 
-        setTimeout(() => { isRemoteChange = false; }, 200);
-        statusBadge.innerText = "متصل - مزامن";
+        statusBadge.innerText = "متصل - مزامنة نشطة";
     });
 
+    function loadVideo(url) {
+        if (Hls.isSupported()) {
+            hls.destroy();
+            hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play().catch(() => {
+                    statusBadge.innerText = "اضغط تشغيل لبدء البث";
+                });
+            });
+        } 
+        else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // دعم آيفون وسافاري
+            video.src = url;
+            video.addEventListener('loadedmetadata', function() {
+                video.play();
+            });
+        }
+    }
+
+    // إرسال التحديثات للقاعدة (فقط إذا كان الشخص هو المتحكم)
     function sendSyncUpdate() {
-        if (isRemoteChange) return; 
+        if (!isAuthorized) return; 
         syncRef.update({
             currentTime: video.currentTime,
             isPlaying: !video.paused,
@@ -115,31 +142,16 @@
     video.onpause = sendSyncUpdate;
     video.onseeked = sendSyncUpdate;
 
+    // تحديث الوقت دورياً للمتحكم فقط
     setInterval(() => {
-        if (!video.paused && !isRemoteChange) {
+        if (isAuthorized && !video.paused) {
             syncRef.update({ currentTime: video.currentTime });
         }
-    }, 5000);
-
-    function loadVideo(url) {
-        hls.destroy();
-        if (url.includes('.m3u8')) {
-            if (Hls.isSupported()) {
-                hls = new Hls();
-                hls.loadSource(url);
-                hls.attachMedia(video);
-            } else {
-                video.src = url;
-            }
-        } else {
-            video.src = url;
-        }
-        video.pause();
-    }
+    }, 3000);
 
     function updateDB() {
         if (!isAuthorized) {
-            alert("يرجى إدخال كلمة السر أولاً في خانة الرابط");
+            alert("أدخل كلمة السر أولاً");
             return;
         }
         const newUrl = urlInput.value.trim();
@@ -147,7 +159,7 @@
             syncRef.set({
                 url: newUrl,
                 currentTime: 0,
-                isPlaying: false, 
+                isPlaying: true, 
                 lastUpdated: Date.now()
             });
         }
@@ -155,12 +167,11 @@
 
     function clearDB() {
         if (!isAuthorized) {
-            alert("ممنوع: أدخل كلمة السر أولاً");
+            alert("أدخل كلمة السر أولاً");
             return;
         }
-        if (confirm("مسح البث عند الجميع؟")) {
-            syncRef.set(null);
-            location.reload(); 
+        if (confirm("هل تريد مسح الرابط وإيقاف البث عند الجميع؟")) {
+            syncRef.set(null).then(() => location.reload());
         }
     }
 </script>
