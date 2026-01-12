@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Player - Sync Pro + Voice</title>
+    <title>Smart Player - Sync Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style>
-        :root { --ios-bg: #000000; --ios-card: rgba(28, 28, 30, 0.85); --ios-accent: #0A84FF; --ios-red: #FF3B30; --ios-green: #34C759; }
+        :root { --ios-bg: #000000; --ios-card: rgba(28, 28, 30, 0.85); --ios-accent: #0A84FF; --ios-red: #FF3B30; }
         body { font-family: -apple-system, sans-serif; background-color: var(--ios-bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 500px; }
         h2 { font-weight: 600; text-align: center; }
         .glass-card { background: var(--ios-card); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 0.5px solid rgba(255,255,255,0.1); }
         input { width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: white; margin-bottom: 15px; text-align: center; outline: none; }
         .button-group { display: flex; gap: 10px; }
-        button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        button { flex: 2; padding: 14px; border-radius: 12px; border: none; background-color: var(--ios-accent); color: white; font-weight: 600; cursor: pointer; }
         button.delete-btn { flex: 1; background-color: rgba(255, 59, 48, 0.2); color: var(--ios-red); }
-        #voiceBtn { width: 100%; margin-top: 10px; background-color: var(--ios-green); }
         .video-wrapper { width: 100%; border-radius: 20px; overflow: hidden; background: #1c1c1e; margin-bottom: 10px; }
         video { width: 100%; display: block; }
         .status-badge { font-size: 13px; margin-bottom: 12px; opacity: 0.6; text-align: center; }
@@ -28,7 +26,7 @@
 <body>
 
 <div class="container">
-    <h2>بث متزامن + اتصال صوتي</h2>
+    <h2>بث متزامن</h2>
     <div id="connectionStatus" class="status-badge">جاري المزامنة...</div>
     <div class="video-wrapper">
         <video id="video" controls playsinline muted></video>
@@ -39,8 +37,6 @@
             <button onclick="updateDB()">تحديث الرابط للكل</button>
             <button class="delete-btn" onclick="clearDB()">مسح</button>
         </div>
-        <button id="voiceBtn" onclick="toggleVoice()">تشغيل التواصل الصوتي 🎤</button>
-        <div id="remote-audios"></div>
     </div>
 </div>
 
@@ -57,26 +53,31 @@
 
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    const syncRef = database.ref('videoSync');
-    const voiceRef = database.ref('voiceUsers');
+    const syncRef = database.ref('videoSync'); // مرجع المزامنة الشاملة
 
     const video = document.getElementById('video');
     const urlInput = document.getElementById('videoUrl');
     let hls = new Hls();
-    let isUpdating = false;
+    let isUpdating = false; // لمنع التكرار اللانهائي عند المزامنة
 
-    // --- منطق الفيديو الأصلي (بدون تغيير) ---
+    // 1. الاستماع للتغييرات من Firebase (الرابط، الوقت، الحالة)
     syncRef.on('value', (snapshot) => {
         if (isUpdating) return;
         const data = snapshot.val();
         if (!data) return;
+
+        // تحديث الرابط إذا تغير
         if (data.url && video.src !== data.url && !video.src.includes(data.url)) {
             urlInput.value = data.url;
             playVideo(data.url);
         }
+
+        // مزامنة وقت الفيديو (إذا كان الفرق أكثر من ثانيتين)
         if (Math.abs(video.currentTime - data.currentTime) > 2) {
             video.currentTime = data.currentTime;
         }
+
+        // مزامنة التشغيل والإيقاف
         if (data.isPlaying && video.paused) {
             video.play().catch(() => {});
         } else if (!data.isPlaying && !video.paused) {
@@ -84,6 +85,7 @@
         }
     });
 
+    // 2. إرسال التحديثات للقاعدة عند التقديم أو الإيقاف (من طرفك)
     function sendSyncUpdate() {
         isUpdating = true;
         syncRef.update({
@@ -93,6 +95,7 @@
         }).then(() => { isUpdating = false; });
     }
 
+    // مراقبة أحداث المشغل لإرسالها لأصدقائك
     video.onplay = sendSyncUpdate;
     video.onpause = sendSyncUpdate;
     video.onseeked = sendSyncUpdate;
@@ -118,73 +121,17 @@
     function updateDB() {
         const newUrl = urlInput.value.trim();
         if (newUrl) {
-            syncRef.set({ url: newUrl, currentTime: 0, isPlaying: true, lastUpdated: Date.now() });
+            syncRef.set({
+                url: newUrl,
+                currentTime: 0,
+                isPlaying: true,
+                lastUpdated: Date.now()
+            });
         }
     }
 
     function clearDB() {
         if (confirm("مسح البث عند الجميع؟")) syncRef.set(null);
-    }
-
-    // --- منطق الاتصال الصوتي المطور ---
-    let myPeer;
-    let localStream;
-    const remoteAudios = document.getElementById('remote-audios');
-
-    function toggleVoice() {
-        const btn = document.getElementById('voiceBtn');
-        if (localStream) return;
-
-        // إعدادات محسنة للصوت لمنع الصدى
-        const constraints = { 
-            audio: { echoCancellation: true, noiseSuppression: true } 
-        };
-
-        navigator.mediaDevices.getUserMedia(constraints).then(stream => {
-            localStream = stream;
-            myPeer = new Peer(); 
-
-            myPeer.on('open', (id) => {
-                btn.innerText = "صوتك مسموع الآن ✅";
-                btn.style.backgroundColor = "#ff9500";
-                
-                const userRef = voiceRef.push();
-                userRef.set({ peerId: id });
-                userRef.onDisconnect().remove(); 
-            });
-
-            myPeer.on('call', call => {
-                call.answer(localStream);
-                call.on('stream', userAudioStream => addAudioStream(userAudioStream));
-            });
-
-            voiceRef.once('value', snapshot => {
-                snapshot.forEach(child => {
-                    const peerId = child.val().peerId;
-                    if (peerId !== myPeer.id) {
-                        const call = myPeer.call(peerId, localStream);
-                        call.on('stream', userAudioStream => addAudioStream(userAudioStream));
-                    }
-                });
-            });
-        }).catch(err => {
-            alert("تأكد من استخدام HTTPS والسماح بالميكروفون");
-            console.error(err);
-        });
-    }
-
-    function addAudioStream(stream) {
-        const audio = document.createElement('audio');
-        audio.srcObject = stream;
-        audio.autoplay = true;
-        audio.controls = false;
-        
-        // حل مشكلة الحظر التلقائي للصوت في المتصفحات
-        audio.play().catch(() => {
-            document.addEventListener('click', () => { audio.play(); }, { once: true });
-        });
-
-        remoteAudios.append(audio);
     }
 </script>
 </body>
